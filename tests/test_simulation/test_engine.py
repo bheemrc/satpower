@@ -52,9 +52,9 @@ class TestSimulationRun:
             assert np.allclose(eclipse_power, 0.0, atol=0.01)
 
     def test_soc_decreases_in_eclipse(self, basic_sim):
-        """SoC should generally decrease during eclipse (no generation)."""
-        results = basic_sim.run(duration_orbits=2, dt_max=30)
-        # Find a sustained eclipse region
+        """SoC should decrease during eclipse (no generation, loads still draw)."""
+        results = basic_sim.run(duration_orbits=3, dt_max=30)
+        # Find a sustained eclipse region (skip first one which may start at SoC=1.0)
         eclipse_runs = []
         in_run = False
         start = 0
@@ -63,15 +63,25 @@ class TestSimulationRun:
                 start = i
                 in_run = True
             elif not results.eclipse[i] and in_run:
-                if i - start > 5:
+                if i - start > 3:
                     eclipse_runs.append((start, i))
                 in_run = False
 
-        if eclipse_runs:
-            s, e = eclipse_runs[0]
-            # SoC at end of eclipse should be less than or equal to at start
-            # (first eclipse may start before any significant discharge)
-            assert results.soc[e - 1] <= results.soc[s]
+        assert len(eclipse_runs) >= 1, "No eclipse periods found"
+        # Check the last eclipse run (SoC should be below 1.0 by then)
+        s, e = eclipse_runs[-1]
+        assert results.soc[e - 1] < results.soc[s], (
+            f"SoC did not decrease during eclipse: "
+            f"start={results.soc[s]:.4f}, end={results.soc[e-1]:.4f}"
+        )
+
+    def test_soc_not_flat_at_100(self, basic_sim):
+        """SoC must show variation — should not be pinned at 100% the entire time."""
+        results = basic_sim.run(duration_orbits=3, dt_max=30)
+        assert results.worst_case_dod > 0.01, (
+            f"SoC appears stuck at 100% (DoD={results.worst_case_dod:.4f}). "
+            "Battery should discharge during eclipse."
+        )
 
     def test_duration_seconds(self, basic_sim):
         results = basic_sim.run(duration_s=3600, dt_max=60)

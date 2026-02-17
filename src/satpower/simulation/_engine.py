@@ -5,10 +5,10 @@ from __future__ import annotations
 import numpy as np
 from scipy.integrate import solve_ivp
 
-from satpower.orbit._propagator import Orbit
+from satpower.orbit._propagator import Orbit, R_EARTH
 from satpower.orbit._eclipse import EclipseModel
 from satpower.orbit._environment import OrbitalEnvironment
-from satpower.orbit._geometry import sun_position_eci, sun_vector, panel_incidence_angle
+from satpower.orbit._geometry import sun_position_eci, sun_vector
 from satpower.solar._panel import SolarPanel
 from satpower.battery._pack import BatteryPack
 from satpower.battery._soc import CoulombCounter
@@ -19,6 +19,38 @@ from satpower.simulation._results import SimulationResults
 # Default panel temperature (K) — simplified for Phase 1
 _DEFAULT_PANEL_TEMP_K = 301.15  # ~28°C (standard test conditions)
 _DEFAULT_BATTERY_TEMP_K = 298.15  # ~25°C
+
+
+def _nadir_rotation_matrix(sat_pos: np.ndarray, sat_vel: np.ndarray) -> np.ndarray:
+    """Compute rotation matrix from ECI to nadir-pointing body frame.
+
+    Body frame convention:
+    - Z_body points toward Earth (nadir)
+    - X_body along velocity direction (ram)
+    - Y_body completes right-hand frame (orbit normal cross-track)
+
+    Parameters
+    ----------
+    sat_pos : (3,) satellite position in ECI
+    sat_vel : (3,) satellite velocity in ECI
+
+    Returns
+    -------
+    (3, 3) rotation matrix R such that v_body = R @ v_eci
+    """
+    # Z_body = -r_hat (toward Earth)
+    z_body = -sat_pos / np.linalg.norm(sat_pos)
+
+    # Y_body = orbit normal = -(r x v) / |r x v|  (negative so X ends up in ram direction)
+    h = np.cross(sat_pos, sat_vel)
+    y_body = -h / np.linalg.norm(h)
+
+    # X_body = Y x Z (completes right-hand frame, roughly along velocity)
+    x_body = np.cross(y_body, z_body)
+    x_body = x_body / np.linalg.norm(x_body)
+
+    # Rotation matrix: rows are body axes expressed in ECI
+    return np.array([x_body, y_body, z_body])
 
 
 class Simulation:
@@ -53,19 +85,29 @@ class Simulation:
         self._eclipse_model = EclipseModel()
 
     def _compute_solar_power(
-        self, sat_pos: np.ndarray, sun_pos: np.ndarray, shadow_frac: float
+        self,
+        sat_pos: np.ndarray,
+        sat_vel: np.ndarray,
+        sun_pos: np.ndarray,
+        shadow_frac: float,
     ) -> float:
         """Compute total solar array power at a single timestep."""
         if shadow_frac >= 1.0:
             return 0.0
 
-        sun_dir = sun_vector(sat_pos, sun_pos)
+        # Sun direction in ECI
+        sun_dir_eci = sun_vector(sat_pos, sun_pos)
+
+        # Rotate Sun direction to body frame (nadir-pointing attitude)
+        r_eci_to_body = _nadir_rotation_matrix(sat_pos, sat_vel)
+        sun_dir_body = r_eci_to_body @ sun_dir_eci
+
         irradiance = self._environment.solar_flux() * (1.0 - shadow_frac)
 
         total_power = 0.0
         for panel in self._panels:
             total_power += panel.power(
-                sun_dir,
+                sun_dir_body,
                 irradiance,
                 _DEFAULT_PANEL_TEMP_K,
                 self._mppt_efficiency,
@@ -80,12 +122,13 @@ class Simulation:
         """
         soc, v_rc1, v_rc2 = state
 
-        # Clamp SoC
-        soc = np.clip(soc, 0.0, 1.0)
+        # Clamp SoC for intermediate calculations
+        soc_clamped = np.clip(soc, 0.0, 1.0)
 
         # Orbit state at time t
         orbit_state = self._orbit.propagate(np.array([t]))
         sat_pos = orbit_state.position[0]
+        sat_vel = orbit_state.velocity[0]
 
         # Sun position
         sun_pos = sun_position_eci(t, self._epoch_doy)
@@ -95,21 +138,39 @@ class Simulation:
         in_eclipse = shadow >= 0.5
 
         # Solar power
-        solar_power = self._compute_solar_power(sat_pos, sun_pos, shadow)
+        solar_power = self._compute_solar_power(sat_pos, sat_vel, sun_pos, shadow)
 
         # Load power
         load_power = self._loads.power_at(t, in_eclipse)
 
-        # Battery voltage and current
+        # Battery voltage (use OCV estimate for current computation)
         battery_voltage = self._battery.terminal_voltage(
-            soc, 0.0, _DEFAULT_BATTERY_TEMP_K, v_rc1, v_rc2
+            soc_clamped, 0.0, _DEFAULT_BATTERY_TEMP_K, v_rc1, v_rc2
         )
+
+        # Battery current from power balance
         battery_current = self._bus.net_battery_current(
             solar_power, load_power, battery_voltage
         )
 
+        # Iterative correction: recompute voltage with estimated current
+        battery_voltage_loaded = self._battery.terminal_voltage(
+            soc_clamped, battery_current, _DEFAULT_BATTERY_TEMP_K, v_rc1, v_rc2
+        )
+        if battery_voltage_loaded > 0:
+            battery_current = self._bus.net_battery_current(
+                solar_power, load_power, battery_voltage_loaded
+            )
+
         # State derivatives
         dsoc_dt = CoulombCounter.dsoc_dt(battery_current, self._battery.capacity_ah)
+
+        # Enforce SoC bounds: stop charging at 100%, stop discharging at 0%
+        if soc >= 1.0 and dsoc_dt > 0:
+            dsoc_dt = 0.0
+        elif soc <= 0.0 and dsoc_dt < 0:
+            dsoc_dt = 0.0
+
         dv_rc1_dt, dv_rc2_dt = self._battery.derivatives(battery_current, v_rc1, v_rc2)
 
         return np.array([dsoc_dt, dv_rc1_dt, dv_rc2_dt])
@@ -176,17 +237,27 @@ class Simulation:
         for i, t in enumerate(times):
             orbit_state = self._orbit.propagate(np.array([t]))
             sat_pos = orbit_state.position[0]
+            sat_vel = orbit_state.velocity[0]
             sun_pos = sun_position_eci(t, self._epoch_doy)
 
             shadow = self._eclipse_model.shadow_fraction(sat_pos, sun_pos)
             in_ecl = shadow >= 0.5
             eclipse[i] = in_ecl
 
-            power_generated[i] = self._compute_solar_power(sat_pos, sun_pos, shadow)
+            power_generated[i] = self._compute_solar_power(
+                sat_pos, sat_vel, sun_pos, shadow
+            )
             power_consumed[i] = self._loads.power_at(t, in_ecl)
 
-            battery_voltage[i] = self._battery.terminal_voltage(
+            # Compute battery current for voltage under load
+            v_ocv = self._battery.terminal_voltage(
                 soc[i], 0.0, _DEFAULT_BATTERY_TEMP_K, v_rc1[i], v_rc2[i]
+            )
+            i_bat = self._bus.net_battery_current(
+                power_generated[i], power_consumed[i], v_ocv
+            )
+            battery_voltage[i] = self._battery.terminal_voltage(
+                soc[i], i_bat, _DEFAULT_BATTERY_TEMP_K, v_rc1[i], v_rc2[i]
             )
 
             modes.append(

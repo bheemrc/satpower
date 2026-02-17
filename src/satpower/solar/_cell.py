@@ -136,7 +136,12 @@ class SolarCell:
     def mpp(
         self, irradiance: float, temperature_k: float
     ) -> tuple[float, float]:
-        """Find maximum power point (V_mp, I_mp)."""
+        """Find maximum power point (V_mp, I_mp).
+
+        Uses the full I-V curve with brentq root-finding for accuracy.
+        For fast repeated evaluation, use power_at_mpp() which uses an
+        analytical approximation.
+        """
         if irradiance <= 0:
             return 0.0, 0.0
 
@@ -149,6 +154,39 @@ class SolarCell:
         return float(v_range[idx]), float(i_range[idx])
 
     def power_at_mpp(self, irradiance: float, temperature_k: float) -> float:
-        """Power output at maximum power point (W)."""
-        v, i = self.mpp(irradiance, temperature_k)
-        return v * i
+        """Power output at maximum power point (W).
+
+        Uses analytical fill-factor approximation for performance.
+        For the full I-V curve solution, use mpp() instead.
+        """
+        if irradiance <= 0:
+            return 0.0
+
+        g_ratio = irradiance / self._irrad_ref
+        dt = temperature_k - self._temp_ref_k
+
+        # Adjust Voc and Isc for conditions
+        isc = (self._isc + self._disc_dt * dt) * g_ratio
+        voc = self._voc + self._dvoc_dt * dt
+        # Voc also shifts with irradiance (logarithmic)
+        if g_ratio > 0:
+            vt = self._n * K_B * temperature_k / Q_E
+            voc += vt * np.log(max(g_ratio, 1e-10))
+
+        if isc <= 0 or voc <= 0:
+            return 0.0
+
+        # Fill factor approximation: FF ≈ (voc_norm - ln(voc_norm + 0.72)) / (voc_norm + 1)
+        # where voc_norm = Voc / Vt (normalized Voc)
+        vt = self._n * K_B * temperature_k / Q_E
+        voc_norm = voc / vt
+        if voc_norm > 1:
+            ff = (voc_norm - np.log(voc_norm + 0.72)) / (voc_norm + 1)
+            # Series resistance correction
+            rs_loss = self._rs * isc / voc
+            ff *= (1.0 - rs_loss)
+        else:
+            ff = 0.7  # fallback
+
+        ff = np.clip(ff, 0.5, 0.95)
+        return float(isc * voc * ff)

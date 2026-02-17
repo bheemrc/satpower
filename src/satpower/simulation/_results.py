@@ -6,6 +6,9 @@ from dataclasses import dataclass
 
 import numpy as np
 
+# NumPy 2.0 removed np.trapz in favour of np.trapezoid
+_trapz = getattr(np, "trapezoid", None) or np.trapz
+
 
 @dataclass
 class SimulationResults:
@@ -50,7 +53,7 @@ class SimulationResults:
         if n_orbits <= 0:
             return 0.0
         net_power = self.power_generated - self.power_consumed
-        total_energy_ws = float(np.trapezoid(net_power, self.time))
+        total_energy_ws = float(_trapz(net_power, self.time))
         return total_energy_ws / 3600.0 / n_orbits
 
     @property

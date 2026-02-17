@@ -15,10 +15,10 @@ class ModeScheduler:
     def __init__(self, profile: LoadProfile):
         self._profile = profile
 
-    def power_at(self, time: float, in_eclipse: bool = False, soc: float = 1.0) -> float:
+    def power_at(self, time: float, in_eclipse: bool = False) -> float:
         """Get total power consumption considering mode transitions."""
         return self._profile.power_at(time, in_eclipse)
 
-    def active_modes(self, time: float, in_eclipse: bool = False, soc: float = 1.0) -> list[str]:
+    def active_modes(self, time: float, in_eclipse: bool = False) -> list[str]:
         """Get active modes considering transitions."""
         return self._profile.active_modes(time, in_eclipse)

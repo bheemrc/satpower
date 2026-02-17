@@ -130,13 +130,13 @@ class SolarPanel:
         # Effective irradiance on panel
         effective_irradiance = irradiance * cos_angle
 
-        # Power per unit area from cell model
-        power_per_cell_area = self._cell.power_at_mpp(
+        # Power output of a single cell at this irradiance
+        power_per_cell = self._cell.power_at_mpp(
             effective_irradiance, temperature_k
         )
 
-        # Scale by panel area / cell area ratio
+        # Scale by number of cells that fit on this panel
         n_cells = self._area_m2 / self._cell.area_m2
-        total_power = power_per_cell_area * n_cells * mppt_efficiency
+        total_power = power_per_cell * n_cells * mppt_efficiency
 
         return max(0.0, total_power)

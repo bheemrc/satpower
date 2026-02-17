@@ -6,10 +6,11 @@ from __future__ import annotations
 class MonteCarloRunner:
     """Monte Carlo simulation for mission lifetime analysis.
 
-    Phase 1 stub — Phase 2 will implement parameter sampling and
-    multi-run aggregation.
+    Not yet implemented — will be available in Phase 2.
     """
 
     def __init__(self, n_runs: int = 100, seed: int = 42):
-        self._n_runs = n_runs
-        self._seed = seed
+        raise NotImplementedError(
+            "MonteCarloRunner is not yet implemented. "
+            "It will be available in a future release (Phase 2)."
+        )

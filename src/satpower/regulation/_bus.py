@@ -9,7 +9,8 @@ class PowerBus:
     """Spacecraft power bus.
 
     Manages bus voltage and converter losses between solar array,
-    battery, and loads.
+    battery, and loads. Applies DC-DC converter efficiency to both
+    charging (solar → battery) and discharging (battery → loads) paths.
     """
 
     def __init__(
@@ -37,6 +38,9 @@ class PowerBus:
         """Compute net current flowing into/out of battery.
 
         Positive = discharge (load > solar), negative = charge (solar > load).
+        Applies converter efficiency in both directions:
+        - Discharge: battery must supply load_power / efficiency
+        - Charge: battery receives excess solar * efficiency
 
         Parameters
         ----------
@@ -47,11 +51,20 @@ class PowerBus:
         if battery_voltage <= 0:
             return 0.0
 
+        eff = self._converter.efficiency
+
         # Solar power goes through MPPT/converter to bus
-        solar_to_bus = self._converter.output_power(solar_power)
+        solar_to_bus = solar_power * eff
 
-        # Net power the battery must provide (positive = discharge)
-        net_power = load_power - solar_to_bus
+        # Net power balance at the bus
+        net_power_bus = load_power - solar_to_bus
 
-        # Convert to battery current
-        return net_power / battery_voltage
+        if net_power_bus > 0:
+            # Discharging: battery must supply more than bus needs due to
+            # converter loss from battery voltage to bus voltage
+            battery_power = net_power_bus / eff
+        else:
+            # Charging: excess solar charges battery with converter loss
+            battery_power = net_power_bus * eff
+
+        return battery_power / battery_voltage

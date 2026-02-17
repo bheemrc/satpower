@@ -10,10 +10,11 @@ from satpower.simulation._results import SimulationResults
 def mock_results():
     n = 100
     period = 5400.0
+    rng = np.random.default_rng(42)
     return SimulationResults(
         time=np.linspace(0, period * 2, n),
         soc=np.linspace(1.0, 0.7, n),
-        power_generated=np.random.uniform(0, 10, n),
+        power_generated=rng.uniform(0, 10, n),
         power_consumed=np.full(n, 4.0),
         battery_voltage=np.linspace(8.4, 7.2, n),
         eclipse=np.array([i % 3 == 0 for i in range(n)]),
