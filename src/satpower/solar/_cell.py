@@ -79,6 +79,16 @@ class SolarCell:
     def packing_factor(self) -> float:
         return self._packing_factor
 
+    @property
+    def voc(self) -> float:
+        """Open-circuit voltage at test conditions (V)."""
+        return self._voc
+
+    @property
+    def isc(self) -> float:
+        """Short-circuit current at test conditions (A)."""
+        return self._isc
+
     def _adjust_for_conditions(
         self, irradiance: float, temperature_k: float
     ) -> tuple[float, float, float]:

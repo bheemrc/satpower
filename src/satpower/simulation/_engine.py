@@ -14,6 +14,7 @@ from satpower.battery._pack import BatteryPack
 from satpower.battery._soc import CoulombCounter
 from satpower.loads._profile import LoadProfile
 from satpower.regulation._bus import PowerBus
+from satpower.regulation._eps_board import EPSBoard
 from satpower.simulation._results import SimulationResults
 
 # Default panel temperature (K) — simplified for Phase 1
@@ -72,14 +73,23 @@ class Simulation:
         mppt_efficiency: float = 0.97,
         initial_soc: float = 1.0,
         epoch_day_of_year: float = 80.0,
+        eps_board: EPSBoard | None = None,
     ):
         self._orbit = orbit
         self._panels = panels
         self._battery = battery
         self._loads = loads
         self._environment = environment or OrbitalEnvironment()
-        self._bus = bus or PowerBus()
-        self._mppt_efficiency = mppt_efficiency
+        self._eps_board = eps_board
+
+        # EPS board overrides bus and mppt_efficiency when provided
+        if eps_board is not None:
+            self._bus = eps_board.bus
+            self._mppt_efficiency = eps_board.mppt_efficiency
+        else:
+            self._bus = bus or PowerBus()
+            self._mppt_efficiency = mppt_efficiency
+
         self._initial_soc = initial_soc
         self._epoch_doy = epoch_day_of_year
         self._eclipse_model = EclipseModel()

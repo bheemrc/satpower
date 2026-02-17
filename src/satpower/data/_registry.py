@@ -37,5 +37,11 @@ class ComponentRegistry:
     def get_eps(self, name: str) -> EPSData:
         return load_eps(name)
 
+    def list_missions(self) -> list[str]:
+        missions_dir = _DATA_DIR / "missions"
+        if not missions_dir.exists():
+            return []
+        return [p.stem for p in missions_dir.glob("*.yaml")]
+
 
 registry = ComponentRegistry()

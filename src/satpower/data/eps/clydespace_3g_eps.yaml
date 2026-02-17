@@ -1,0 +1,11 @@
+name: "Clyde Space 3rd Gen EPS"
+bus_voltage_v: 5.0
+bus_voltage_range_v: [3.3, 5.5]
+max_solar_input_v: 7.0
+max_solar_input_a: 2.0
+converter_efficiency: 0.93
+mppt_efficiency: 0.97
+battery_config: "2S1P"
+num_solar_inputs: 7
+max_output_channels: 8
+mass_g: 86.0

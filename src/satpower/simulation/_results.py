@@ -61,6 +61,24 @@ class SimulationResults:
         """Fraction of simulation time in eclipse."""
         return float(np.mean(self.eclipse.astype(float)))
 
+    def report(
+        self,
+        loads: "LoadProfile",
+        battery: "BatteryPack",
+        mission_name: str = "Mission",
+    ) -> "PowerBudgetReport":
+        """Generate a power budget report from these results.
+
+        Parameters
+        ----------
+        loads : The LoadProfile used in the simulation
+        battery : The BatteryPack used in the simulation
+        mission_name : Name for the report header
+        """
+        from satpower.simulation._report import generate_power_budget
+
+        return generate_power_budget(self, loads, battery, mission_name)
+
     def summary(self) -> dict:
         """Summary statistics."""
         return {

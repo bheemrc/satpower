@@ -63,6 +63,85 @@ class TestPanelPower:
         assert total > 0
 
 
+class TestExcludeFaces:
+    def test_exclude_one_face(self):
+        panels = SolarPanel.cubesat_body("3U", "azur_3g30c", exclude_faces=["-Z"])
+        assert len(panels) == 5
+        names = [p.name for p in panels]
+        assert "3U_-Z" not in names
+
+    def test_exclude_multiple_faces(self):
+        panels = SolarPanel.cubesat_body(
+            "3U", "azur_3g30c", exclude_faces=["-Z", "+Z"]
+        )
+        assert len(panels) == 4
+        names = [p.name for p in panels]
+        assert "3U_-Z" not in names
+        assert "3U_+Z" not in names
+
+    def test_exclude_none_gives_all_faces(self):
+        panels = SolarPanel.cubesat_body("3U", "azur_3g30c", exclude_faces=None)
+        assert len(panels) == 6
+
+    def test_exclude_empty_gives_all_faces(self):
+        panels = SolarPanel.cubesat_body("3U", "azur_3g30c", exclude_faces=[])
+        assert len(panels) == 6
+
+
+class TestCubesatWithWings:
+    def test_two_wings_default(self):
+        panels = SolarPanel.cubesat_with_wings("3U", "azur_3g30c", wing_count=2)
+        # 6 body panels + 2 wings
+        assert len(panels) == 8
+        wing_names = [p.name for p in panels if "wing" in p.name]
+        assert len(wing_names) == 2
+        assert "wing_+Y" in wing_names
+        assert "wing_-Y" in wing_names
+
+    def test_four_wings(self):
+        panels = SolarPanel.cubesat_with_wings("3U", "azur_3g30c", wing_count=4)
+        # 6 body panels + 4 wings
+        assert len(panels) == 10
+        wing_names = [p.name for p in panels if "wing" in p.name]
+        assert len(wing_names) == 4
+
+    def test_with_exclude_faces(self):
+        panels = SolarPanel.cubesat_with_wings(
+            "3U", "azur_3g30c", wing_count=2, exclude_faces=["-Z"]
+        )
+        # 5 body panels + 2 wings
+        assert len(panels) == 7
+        names = [p.name for p in panels]
+        assert "3U_-Z" not in names
+
+    def test_custom_wing_area(self):
+        area = 0.05
+        panels = SolarPanel.cubesat_with_wings(
+            "3U", "azur_3g30c", wing_count=2, wing_area_m2=area
+        )
+        wings = [p for p in panels if "wing" in p.name]
+        for wing in wings:
+            # Wing area should be custom area * packing factor
+            expected = area * wing.cell.packing_factor
+            assert abs(wing.area_m2 - expected) < 1e-10
+
+    def test_default_wing_area_is_2x_long_face(self):
+        panels = SolarPanel.cubesat_with_wings("3U", "azur_3g30c", wing_count=2)
+        wings = [p for p in panels if "wing" in p.name]
+        # Default: 2 * 0.30 * 0.10 = 0.06 m^2 * packing_factor
+        pf = wings[0].cell.packing_factor
+        expected = 0.06 * pf
+        assert abs(wings[0].area_m2 - expected) < 1e-10
+
+    def test_invalid_wing_count_raises(self):
+        with pytest.raises(ValueError):
+            SolarPanel.cubesat_with_wings("3U", "azur_3g30c", wing_count=3)
+
+    def test_6u_with_wings(self):
+        panels = SolarPanel.cubesat_with_wings("6U", "azur_3g30c", wing_count=2)
+        assert len(panels) == 8
+
+
 class TestDeployed:
     def test_deployed_panel_creation(self):
         panel = SolarPanel.deployed(

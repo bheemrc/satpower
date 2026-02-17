@@ -1,0 +1,29 @@
+name: "Azur Space 4G32C"
+type: "quadruple_junction"
+junctions: ["InGaP", "GaAs", "InGaAsP", "Ge"]
+test_conditions:
+  spectrum: "AM0"
+  irradiance_w_m2: 1361.0
+  temperature_c: 28.0
+parameters:
+  voc_v: 3.480
+  isc_a: 0.425
+  vmp_v: 3.140
+  imp_a: 0.408
+  efficiency: 0.320
+  area_cm2: 30.18
+diode_model:
+  ideality_factor: 1.3
+  series_resistance_ohm: 0.007
+  shunt_resistance_ohm: 11000.0
+temperature_coefficients:
+  dvoc_dt_mv_per_c: -7.8
+  disc_dt_ua_cm2_per_c: 8.5
+  dpmp_dt_percent_per_c: -0.038
+radiation:
+  remaining_factor_1e14: 0.94
+  remaining_factor_1e15: 0.89
+optical:
+  absorptance: 0.92
+  emittance: 0.85
+  packing_factor: 0.90

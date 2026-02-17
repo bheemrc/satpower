@@ -1,0 +1,11 @@
+name: "EnduroSat EPS I+"
+bus_voltage_v: 3.3
+bus_voltage_range_v: [3.0, 5.0]
+max_solar_input_v: 6.0
+max_solar_input_a: 1.2
+converter_efficiency: 0.90
+mppt_efficiency: 0.96
+battery_config: "2S1P"
+num_solar_inputs: 6
+max_output_channels: 6
+mass_g: 60.0

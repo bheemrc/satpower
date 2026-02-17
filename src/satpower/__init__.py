@@ -17,6 +17,7 @@ from satpower.loads._profile import LoadProfile, LoadMode
 from satpower.loads._scheduler import ModeScheduler
 from satpower.regulation._bus import PowerBus
 from satpower.regulation._converter import DcDcConverter
+from satpower.regulation._eps_board import EPSBoard
 from satpower.simulation._engine import Simulation
 from satpower.simulation._results import SimulationResults
 from satpower.simulation._events import EclipseEventDetector
@@ -43,6 +44,7 @@ __all__ = [
     "ModeScheduler",
     "PowerBus",
     "DcDcConverter",
+    "EPSBoard",
     "Simulation",
     "SimulationResults",
     "EclipseEventDetector",

@@ -1,0 +1,39 @@
+name: "SciSat-6U"
+application: "space_science"
+orbit:
+  type: circular
+  altitude_km: 650
+  inclination_deg: 97.9
+satellite:
+  form_factor: "6U"
+  eps_board: "clydespace_3g_eps"
+  solar:
+    cell: "azur_3g30c"
+    body_panels: true
+    exclude_faces: ["-Z"]
+    deployed_wings:
+      count: 4
+      area_m2: 0.12
+  battery:
+    cell: "lg_mj1"
+    config: "2S2P"
+loads:
+  - name: obc
+    power_w: 0.4
+  - name: instrument
+    power_w: 8.0
+    duty_cycle: 0.40
+    trigger: sunlight
+  - name: star_tracker
+    power_w: 1.5
+  - name: adcs_reaction_wheel
+    power_w: 2.5
+  - name: sband_downlink
+    power_w: 8.0
+    duty_cycle: 0.10
+  - name: heater
+    power_w: 1.5
+    trigger: eclipse
+simulation:
+  duration_orbits: 10
+  initial_soc: 1.0

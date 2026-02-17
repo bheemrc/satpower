@@ -1,0 +1,29 @@
+name: "UniSat-Demo"
+application: "tech_demo"
+orbit:
+  type: circular
+  altitude_km: 408
+  inclination_deg: 51.6
+satellite:
+  form_factor: "3U"
+  eps_board: "endurosat_eps_i_plus"
+  solar:
+    cell: "azur_3g30c"
+    body_panels: true
+  battery:
+    cell: "samsung_inr18650_30q"
+    config: "2S2P"
+loads:
+  - name: obc
+    power_w: 0.4
+  - name: payload_experiment
+    power_w: 3.0
+    duty_cycle: 0.25
+  - name: uhf_comms
+    power_w: 4.0
+    duty_cycle: 0.10
+  - name: beacon
+    power_w: 0.3
+simulation:
+  duration_orbits: 10
+  initial_soc: 1.0

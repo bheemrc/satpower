@@ -1,0 +1,29 @@
+name: "SolAero ZTJ"
+type: "triple_junction"
+junctions: ["InGaP", "GaAs", "Ge"]
+test_conditions:
+  spectrum: "AM0"
+  irradiance_w_m2: 1361.0
+  temperature_c: 28.0
+parameters:
+  voc_v: 2.730
+  isc_a: 0.485
+  vmp_v: 2.390
+  imp_a: 0.469
+  efficiency: 0.295
+  area_cm2: 27.60
+diode_model:
+  ideality_factor: 1.2
+  series_resistance_ohm: 0.006
+  shunt_resistance_ohm: 9200.0
+temperature_coefficients:
+  dvoc_dt_mv_per_c: -6.0
+  disc_dt_ua_cm2_per_c: 9.8
+  dpmp_dt_percent_per_c: -0.041
+radiation:
+  remaining_factor_1e14: 0.94
+  remaining_factor_1e15: 0.89
+optical:
+  absorptance: 0.91
+  emittance: 0.85
+  packing_factor: 0.90

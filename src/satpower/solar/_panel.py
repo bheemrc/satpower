@@ -41,25 +41,34 @@ class SolarPanel:
         self._name = name
 
     @classmethod
-    def cubesat_body(cls, form_factor: str, cell_type: str) -> list[SolarPanel]:
+    def cubesat_body(
+        cls,
+        form_factor: str,
+        cell_type: str,
+        exclude_faces: list[str] | None = None,
+    ) -> list[SolarPanel]:
         """Create body-mounted panels for a CubeSat.
 
-        Returns one panel per face (6 panels). For 3U and 6U, the ±X and ±Z
-        faces are "long" faces, ±Y are "short" faces.
+        Returns one panel per face (up to 6 panels). For 3U and 6U, the ±X
+        and ±Z faces are "long" faces, ±Y are "short" faces.
 
         Parameters
         ----------
         form_factor : "1U", "3U", or "6U"
         cell_type : solar cell name (e.g. "azur_3g30c")
+        exclude_faces : faces to skip (e.g. ["-Z"] for nadir camera)
         """
         if form_factor not in _CUBESAT_FACE:
             raise ValueError(f"Unknown CubeSat form factor: {form_factor!r}")
 
+        excluded = set(exclude_faces or [])
         cell = SolarCell.from_datasheet(cell_type)
         dims = _CUBESAT_FACE[form_factor]
 
         panels = []
         for face_name, normal in _FACE_NORMALS.items():
+            if face_name in excluded:
+                continue
             # ±Y faces are always "short" dimension, others are "long"
             if "Y" in face_name:
                 w, h = dims["short"]
@@ -73,6 +82,70 @@ class SolarPanel:
                     cell=cell,
                     normal=normal,
                     name=f"{form_factor}_{face_name}",
+                )
+            )
+
+        return panels
+
+    @classmethod
+    def cubesat_with_wings(
+        cls,
+        form_factor: str,
+        cell_type: str,
+        wing_count: int = 2,
+        wing_area_m2: float | None = None,
+        exclude_faces: list[str] | None = None,
+    ) -> list[SolarPanel]:
+        """Create body-mounted panels plus deployed wing panels.
+
+        Parameters
+        ----------
+        form_factor : "1U", "3U", or "6U"
+        cell_type : solar cell name (e.g. "azur_3g30c")
+        wing_count : number of wings (2 or 4)
+        wing_area_m2 : area per wing in m^2 (None = 2x long face area)
+        exclude_faces : faces to skip on the body (e.g. ["-Z"])
+
+        Returns
+        -------
+        List of SolarPanel — body panels followed by wing panels.
+        2 wings: +-Y normals (optimal for SSO).
+        4 wings: +-X and +-Y normals.
+        """
+        if wing_count not in (2, 4):
+            raise ValueError(f"wing_count must be 2 or 4, got {wing_count}")
+        if form_factor not in _CUBESAT_FACE:
+            raise ValueError(f"Unknown CubeSat form factor: {form_factor!r}")
+
+        # Body panels
+        panels = cls.cubesat_body(form_factor, cell_type, exclude_faces)
+
+        # Default wing area: 2x the long face
+        if wing_area_m2 is None:
+            dims = _CUBESAT_FACE[form_factor]
+            w, h = dims["long"]
+            wing_area_m2 = 2.0 * w * h
+
+        cell = SolarCell.from_datasheet(cell_type)
+        effective_wing_area = wing_area_m2 * cell.packing_factor
+
+        if wing_count == 2:
+            wing_normals = [("+Y", _FACE_NORMALS["+Y"]), ("-Y", _FACE_NORMALS["-Y"])]
+        else:
+            wing_normals = [
+                ("+X", _FACE_NORMALS["+X"]),
+                ("-X", _FACE_NORMALS["-X"]),
+                ("+Y", _FACE_NORMALS["+Y"]),
+                ("-Y", _FACE_NORMALS["-Y"]),
+            ]
+
+        for face_name, normal in wing_normals:
+            panels.append(
+                cls(
+                    area_m2=effective_wing_area,
+                    cell=cell,
+                    normal=normal,
+                    name=f"wing_{face_name}",
                 )
             )
 
