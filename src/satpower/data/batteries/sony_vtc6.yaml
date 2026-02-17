@@ -1,0 +1,37 @@
+name: "Sony VTC6"
+chemistry: "NMC"
+form_factor: "18650"
+nominal_voltage_v: 3.6
+capacity_ah: 3.0
+max_charge_voltage_v: 4.2
+min_discharge_voltage_v: 2.5
+max_charge_current_a: 5.0
+max_discharge_current_a: 30.0
+mass_g: 46.6
+thevenin_model:
+  ro_ohm: 0.018
+  r1_ohm: 0.010
+  c1_f: 250.0
+  r2_ohm: 0.004
+  c2_f: 1800.0
+ocv_soc_table:
+  - [0.0, 3.00]
+  - [0.1, 3.30]
+  - [0.2, 3.48]
+  - [0.3, 3.58]
+  - [0.5, 3.72]
+  - [0.7, 3.92]
+  - [0.9, 4.10]
+  - [1.0, 4.20]
+temperature:
+  ro_activation_energy_j: 18000.0
+  reference_temp_c: 25.0
+  capacity_derating:
+    - [-20, 0.65]
+    - [0, 0.82]
+    - [25, 1.00]
+    - [45, 0.97]
+aging:
+  calendar_fade_per_year_25c: 0.025
+  cycle_fade_per_cycle_50dod: 0.00012
+  cycle_fade_per_cycle_100dod: 0.0006
