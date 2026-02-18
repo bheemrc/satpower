@@ -2,6 +2,8 @@
 
 Detailed documentation for the physics models in satpower.
 
+> **Note:** The models described here are simplified analytical approximations suitable for preliminary design and trade studies. They are based on published physics and standard references, but have not been validated against in-orbit measurements. Actual satellite power system performance depends on factors not captured here (manufacturing tolerances, radiation degradation profiles, thermal cycling effects, etc.).
+
 ## Orbital mechanics
 
 ### Kepler propagation

@@ -1,5 +1,7 @@
 # Getting Started
 
+> **Usage note:** satpower is a development-stage library. Models are based on published physics and component datasheets, but have not been validated against real satellite telemetry or in-orbit power data. Always independently verify results before relying on them for mission-critical decisions.
+
 ## Installation
 
 ```bash

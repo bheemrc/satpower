@@ -2,7 +2,14 @@
 
 CubeSat Electrical Power System Simulation Library.
 
-Physics-based simulation connecting orbital mechanics to subsystem-level power analysis. Answer the critical question: *"Will my satellite survive the worst-case eclipse season without running out of power?"*
+![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)
+![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-green)
+![Tests: 284](https://img.shields.io/badge/tests-284%20passing-brightgreen)
+![Status: Development](https://img.shields.io/badge/status-development-yellow)
+
+Physics-based simulation connecting orbital mechanics to subsystem-level power analysis. Helps answer the question: *"Will my satellite survive the worst-case eclipse season without running out of power?"*
+
+> **Note:** This library is under active development. Models are based on published physics and datasheet parameters, but it has **not been validated against real satellite telemetry or flight data**. Users should independently verify results before using them for mission-critical decisions. Use at your own risk.
 
 ## Features
 
@@ -108,6 +115,15 @@ async def create_simulation(request: SimulationRequest):
 | [Component Database](docs/component-database.md) | Available solar cells, batteries, EPS boards |
 | [API Reference](docs/api-reference.md) | Module and class reference |
 | [Architecture](docs/architecture.md) | Internal design, module structure |
+
+## Limitations
+
+- Orbit propagation is circular Keplerian only (with optional J2 secular RAAN drift). No drag, SRP, or eccentricity.
+- Solar cell model uses the single-diode equivalent circuit. No multi-junction sub-cell modeling.
+- Thermal model is lumped-parameter (single node per component), not finite-element.
+- Battery aging model uses simplified calendar + cycle fade curves, not electrochemical degradation physics.
+- Component datasheets are derived from publicly available specifications and may not reflect actual measured performance of specific hardware units.
+- No validation has been performed against real satellite telemetry, in-orbit power measurements, or operational mission data.
 
 ## License
 

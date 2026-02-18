@@ -1,5 +1,7 @@
 # User Guide
 
+> **Usage note:** Simulation results are engineering estimates based on analytical models and datasheet parameters. They are intended for preliminary design, trade studies, and educational use. Always verify results independently before relying on them for mission-critical decisions.
+
 ## Core concepts
 
 A satpower simulation connects five subsystems:

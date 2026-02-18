@@ -1,6 +1,8 @@
 # Component Database
 
-satpower ships with YAML datasheets for real CubeSat components. Components are auto-discovered from `src/satpower/data/`.
+satpower ships with YAML datasheets for CubeSat components derived from publicly available specifications. Components are auto-discovered from `src/satpower/data/`.
+
+> **Note:** Datasheet parameters are sourced from manufacturer public documentation and may not reflect the actual measured performance of specific hardware units. Parameters like efficiency, capacity, and voltage limits can vary between production lots and degrade over the component lifetime.
 
 ## Solar cells
 

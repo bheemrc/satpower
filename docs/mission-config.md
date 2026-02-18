@@ -2,6 +2,8 @@
 
 Missions are defined in YAML files that describe the orbit, satellite hardware, power loads, and simulation parameters. This is the easiest way to use satpower -- no Python code required.
 
+> **Note:** Mission presets ship with representative parameters for common CubeSat configurations. They are starting points for analysis, not validated mission designs. Users should substitute actual hardware specifications and load profiles for their specific mission.
+
 ## YAML format
 
 ```yaml
