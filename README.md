@@ -125,6 +125,13 @@ async def create_simulation(request: SimulationRequest):
 - Component datasheets are derived from publicly available specifications and may not reflect actual measured performance of specific hardware units.
 - No validation has been performed against real satellite telemetry, in-orbit power measurements, or operational mission data.
 
+## Acknowledgments
+
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (Anthropic) for AI-assisted development
+- Azur Space, CESI, SolAero, SpectroLab for publicly available solar cell datasheets
+- Panasonic, Samsung, Sony, Molicel for publicly available battery cell datasheets
+- Wertz & Larson, *Space Mission Analysis and Design* (SMAD) for power subsystem reference
+
 ## License
 
 Apache 2.0 -- see [LICENSE](LICENSE) for details.
