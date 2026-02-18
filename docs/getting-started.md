@@ -152,6 +152,8 @@ Key metrics from `results.summary()`:
 
 ## Next steps
 
-- [User Guide](user-guide.md) -- learn about EPS boards, deployed panels, load triggers
+- [User Guide](user-guide.md) -- learn about EPS boards, deployed panels, load triggers, advanced physics
+- [Physics Models](physics-models.md) -- J2 perturbation, conical eclipse, thermal, MPPT, aging
 - [Mission Configuration](mission-config.md) -- YAML format reference
+- [SaaS API](saas-api.md) -- JSON API layer for web integration
 - [Component Database](component-database.md) -- browse available parts

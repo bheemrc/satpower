@@ -51,7 +51,7 @@ class PowerBus:
         if battery_voltage <= 0:
             return 0.0
 
-        eff = self._converter.efficiency
+        eff = self._converter.efficiency_at_load(load_power)
 
         # Solar power goes through MPPT/converter to bus
         solar_to_bus = solar_power * eff

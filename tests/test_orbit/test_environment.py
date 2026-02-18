@@ -44,6 +44,36 @@ class TestEarthIR:
         assert 100 < flux < 300
 
 
+class TestSeasonalFlux:
+    def test_seasonal_flux_perihelion(self):
+        """Day 3 (perihelion) should give flux > 1361."""
+        env = OrbitalEnvironment()
+        flux = env.solar_flux_at_epoch(3.0)
+        assert flux > SOLAR_CONSTANT
+
+    def test_seasonal_flux_aphelion(self):
+        """Day ~186 (aphelion) should give flux < 1361."""
+        env = OrbitalEnvironment()
+        flux = env.solar_flux_at_epoch(186.0)
+        assert flux < SOLAR_CONSTANT
+
+    def test_seasonal_flux_range(self):
+        """Flux should vary within ±3.4% of the solar constant."""
+        env = OrbitalEnvironment()
+        fluxes = [env.solar_flux_at_epoch(d) for d in range(1, 366)]
+        max_flux = max(fluxes)
+        min_flux = min(fluxes)
+        assert max_flux < SOLAR_CONSTANT * 1.035
+        assert min_flux > SOLAR_CONSTANT * 0.965
+
+    def test_seasonal_flux_annual_average(self):
+        """Annual average should be close to the solar constant."""
+        env = OrbitalEnvironment()
+        fluxes = [env.solar_flux_at_epoch(d) for d in range(1, 366)]
+        avg = sum(fluxes) / len(fluxes)
+        assert abs(avg - SOLAR_CONSTANT) < 1.0  # within 1 W/m²
+
+
 class TestBetaAngle:
     def test_equatorial_orbit_vernal_equinox(self):
         env = OrbitalEnvironment()

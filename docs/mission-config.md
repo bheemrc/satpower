@@ -13,6 +13,8 @@ orbit:
   altitude_km: 550
   inclination_deg: 97.6
   raan_deg: 0.0               # optional, default 0
+  j2: true                    # optional, enable J2 perturbation
+  eclipse_model: conical      # optional, "cylindrical" (default) or "conical"
 
 satellite:
   form_factor: "3U"           # "1U", "3U", or "6U"
@@ -45,6 +47,11 @@ simulation:
   duration_orbits: 10         # optional, default 10
   initial_soc: 1.0            # optional, default 1.0
   dt_max: 30.0                # optional, default 30
+  thermal:                    # optional, thermal model
+    enabled: true
+    panel_thermal_mass_j_per_k: 500
+    battery_thermal_mass_j_per_k: 95
+    spacecraft_interior_temp_k: 293.15
 ```
 
 ## Field reference
@@ -57,6 +64,8 @@ simulation:
 | `altitude_km` | float | yes | -- | Orbital altitude in km |
 | `inclination_deg` | float | yes | -- | Orbital inclination in degrees |
 | `raan_deg` | float | no | `0.0` | Right Ascension of Ascending Node |
+| `j2` | bool | no | `false` | Enable J2 perturbation (RAAN drift) |
+| `eclipse_model` | string | no | `"cylindrical"` | Eclipse model: `"cylindrical"` or `"conical"` |
 
 ### `satellite`
 
@@ -104,6 +113,15 @@ simulation:
 | `initial_soc` | float | no | `1.0` | Starting battery state of charge (0-1) |
 | `dt_max` | float | no | `30.0` | Maximum ODE timestep in seconds |
 
+### `simulation.thermal`
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `enabled` | bool | no | `false` | Enable thermal model |
+| `panel_thermal_mass_j_per_k` | float | no | `450.0` | Panel thermal mass (J/K) |
+| `battery_thermal_mass_j_per_k` | float | no | `95.0` | Battery thermal mass (J/K) |
+| `spacecraft_interior_temp_k` | float | no | `293.15` | Spacecraft interior temperature (K) |
+
 ## Using the builder API
 
 ```python
@@ -127,8 +145,8 @@ satpower ships with 5 ready-to-use mission presets in `src/satpower/data/mission
 | Preset | Application | Orbit | Panels | Key loads |
 |--------|-------------|-------|--------|-----------|
 | `earth_observation_3u` | Remote sensing | 550km SSO | Body + 2 wings, no nadir | Camera 6W @30%, ADCS, UHF |
-| `iot_comms_3u` | IoT/M2M relay | 550km 45° | Body only | UHF @50%, beacon, GPS |
-| `tech_demo_iss` | University demo | 408km 51.6° | Body only | Payload 3W @25%, UHF |
+| `iot_comms_3u` | IoT/M2M relay | 550km 45 deg | Body only | UHF @50%, beacon, GPS |
+| `tech_demo_iss` | University demo | 408km 51.6 deg | Body only | Payload 3W @25%, UHF |
 | `ais_maritime_3u` | Ship tracking | 600km SSO | Body + 2 wings | AIS receiver, S-band @10% |
 | `scientific_6u` | Space science | 650km SSO | Body + 4 wings | Instrument 8W @40%, star tracker, reaction wheels |
 

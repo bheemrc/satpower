@@ -22,6 +22,8 @@ class SimulationResults:
     eclipse: np.ndarray  # boolean
     modes: list[str]  # active modes at each timestep
     orbit_period: float  # seconds
+    panel_temperature: np.ndarray | None = None  # K (when thermal enabled)
+    battery_temperature: np.ndarray | None = None  # K (when thermal enabled)
 
     @property
     def time_minutes(self) -> np.ndarray:

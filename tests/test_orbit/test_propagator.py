@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from satpower.orbit._propagator import Orbit, R_EARTH, MU_EARTH
+from satpower.orbit._propagator import Orbit, R_EARTH, MU_EARTH, J2
 
 
 class TestOrbitCreation:
@@ -61,3 +61,47 @@ class TestPropagation:
         max_z = np.max(np.abs(state.position[:, 2]))
         expected_r = R_EARTH + 500e3
         assert max_z > expected_r * 0.99
+
+
+class TestJ2Perturbation:
+    def test_j2_raan_drift_sso(self):
+        """SSO at 550 km should precess ~0.9856 deg/day."""
+        orbit = Orbit.circular(altitude_km=550, inclination_deg=97.6, j2=True)
+        one_day = 86400.0
+        times = np.array([0.0, one_day])
+        state = orbit.propagate(times)
+        # The RAAN drift should be close to 0.9856 deg/day for SSO
+        drift_deg = np.degrees(orbit._raan_rate * one_day)
+        assert abs(drift_deg - 0.9856) < 0.15  # within 0.15 deg/day
+
+    def test_j2_polar_no_drift(self):
+        """Polar orbit (i=90°) should have zero RAAN drift."""
+        orbit = Orbit.circular(altitude_km=500, inclination_deg=90, j2=True)
+        assert abs(orbit._raan_rate) < 1e-12
+
+    def test_j2_equatorial_max_drift(self):
+        """Equatorial orbit should have maximum RAAN drift rate."""
+        equatorial = Orbit.circular(altitude_km=500, inclination_deg=0, j2=True)
+        inclined = Orbit.circular(altitude_km=500, inclination_deg=45, j2=True)
+        assert abs(equatorial._raan_rate) > abs(inclined._raan_rate)
+
+    def test_j2_disabled_by_default(self):
+        """J2 should be disabled by default."""
+        orbit = Orbit.circular(altitude_km=500, inclination_deg=45)
+        assert orbit._raan_rate == 0.0
+
+    def test_j2_altitude_unchanged(self):
+        """J2 should not affect altitude (circular orbit stays circular)."""
+        orbit = Orbit.circular(altitude_km=500, inclination_deg=45, j2=True)
+        times = np.linspace(0, orbit.period * 10, 2000)
+        state = orbit.propagate(times)
+        altitudes = state.altitude / 1000.0
+        assert np.allclose(altitudes, 500, atol=1.0)
+
+    def test_j2_drift_direction(self):
+        """Prograde orbit (i<90°) should have negative RAAN drift (westward)."""
+        orbit = Orbit.circular(altitude_km=500, inclination_deg=45, j2=True)
+        assert orbit._raan_rate < 0
+        # Retrograde orbit (i>90°) should have positive RAAN drift (eastward)
+        retro = Orbit.circular(altitude_km=500, inclination_deg=120, j2=True)
+        assert retro._raan_rate > 0

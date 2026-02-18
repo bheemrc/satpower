@@ -44,6 +44,80 @@ class TestCylindricalShadow:
         assert fracs[2] == 0.0
 
 
+class TestConicalShadow:
+    def test_conical_creation(self):
+        model = EclipseModel(method="conical")
+        assert model._method == "conical"
+
+    def test_invalid_method_raises(self):
+        with pytest.raises(ValueError):
+            EclipseModel(method="invalid")
+
+    def test_conical_full_sun(self):
+        """Satellite on Sun side of Earth should be fully sunlit."""
+        model = EclipseModel(method="conical")
+        sat_pos = np.array([R_EARTH + 400e3, 0, 0])
+        sun_pos = np.array([1.496e11, 0, 0])
+        assert model.shadow_fraction(sat_pos, sun_pos) == 0.0
+
+    def test_conical_full_shadow(self):
+        """Satellite deep behind Earth should be in full umbra."""
+        model = EclipseModel(method="conical")
+        sat_pos = np.array([-(R_EARTH + 400e3), 0, 0])
+        sun_pos = np.array([1.496e11, 0, 0])
+        assert model.shadow_fraction(sat_pos, sun_pos) == 1.0
+
+    def test_conical_penumbra_exists(self):
+        """At the shadow boundary, conical model should produce partial shadow."""
+        model_conical = EclipseModel(method="conical")
+        model_cyl = EclipseModel(method="cylindrical")
+        # Place satellite near shadow edge: slightly inside cylindrical shadow
+        # but at Earth's limb from satellite perspective
+        orbit = Orbit.circular(altitude_km=500, inclination_deg=45)
+        times = np.linspace(0, orbit.period, 2000)
+        state = orbit.propagate(times)
+        sun_pos = sun_position_eci(times, epoch_day_of_year=80)
+
+        fracs = model_conical.shadow_fraction(state.position, sun_pos)
+        # Should have some values strictly between 0 and 1 (penumbra)
+        penumbra_mask = (fracs > 0.0) & (fracs < 1.0)
+        assert np.any(penumbra_mask), "Conical model should produce penumbra values"
+
+    def test_conical_penumbra_gradual(self):
+        """Shadow fraction should transition gradually (no jumps > 0.5)."""
+        model = EclipseModel(method="conical")
+        orbit = Orbit.circular(altitude_km=500, inclination_deg=45)
+        times = np.linspace(0, orbit.period, 5000)
+        state = orbit.propagate(times)
+        sun_pos = sun_position_eci(times, epoch_day_of_year=80)
+        fracs = model.shadow_fraction(state.position, sun_pos)
+        diffs = np.abs(np.diff(fracs))
+        assert np.max(diffs) < 0.5, "Conical shadow should transition gradually"
+
+    def test_conical_matches_cylindrical_deep_shadow(self):
+        """Deep in shadow, both models should agree (fraction ≈ 1.0)."""
+        model_conical = EclipseModel(method="conical")
+        model_cyl = EclipseModel(method="cylindrical")
+        # Satellite directly behind Earth
+        sat_pos = np.array([-(R_EARTH + 400e3), 0, 0])
+        sun_pos = np.array([1.496e11, 0, 0])
+        assert model_conical.shadow_fraction(sat_pos, sun_pos) == model_cyl.shadow_fraction(sat_pos, sun_pos)
+
+    def test_conical_orbit_eclipse_fraction(self):
+        """Conical eclipse fraction should be close to cylindrical (±small correction)."""
+        orbit = Orbit.circular(altitude_km=500, inclination_deg=45)
+        times = np.linspace(0, orbit.period, 2000)
+        state = orbit.propagate(times)
+        sun_pos = sun_position_eci(times, epoch_day_of_year=80)
+
+        cyl = EclipseModel(method="cylindrical")
+        con = EclipseModel(method="conical")
+        cyl_frac = np.mean(cyl.shadow_fraction(state.position, sun_pos))
+        con_frac = np.mean(con.shadow_fraction(state.position, sun_pos))
+        # Should be close but not identical
+        assert abs(cyl_frac - con_frac) < 0.05
+
+
 class TestEclipseFraction:
     def test_orbit_has_eclipse(self):
         """A non-zero inclination orbit should have eclipse periods."""

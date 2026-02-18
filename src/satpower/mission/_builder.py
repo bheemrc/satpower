@@ -13,6 +13,7 @@ from satpower.battery._pack import BatteryPack
 from satpower.loads._profile import LoadProfile
 from satpower.regulation._eps_board import EPSBoard
 from satpower.simulation._engine import Simulation
+from satpower.thermal._model import ThermalModel, ThermalConfig
 
 
 def load_mission(path: str | Path) -> MissionConfig:
@@ -51,6 +52,7 @@ def build_simulation(config: MissionConfig) -> Simulation:
         altitude_km=config.orbit.altitude_km,
         inclination_deg=config.orbit.inclination_deg,
         raan_deg=config.orbit.raan_deg,
+        j2=config.orbit.j2,
     )
 
     # Solar panels
@@ -95,6 +97,17 @@ def build_simulation(config: MissionConfig) -> Simulation:
     if config.satellite.eps_board:
         eps_board = EPSBoard.from_datasheet(config.satellite.eps_board)
 
+    # Thermal model (optional)
+    thermal_model = None
+    if config.simulation.thermal.enabled:
+        thermal_cfg = ThermalConfig(
+            panel_thermal_mass_j_per_k=config.simulation.thermal.panel_thermal_mass_j_per_k,
+            battery_thermal_mass_j_per_k=config.simulation.thermal.battery_thermal_mass_j_per_k,
+            spacecraft_interior_temp_k=config.simulation.thermal.spacecraft_interior_temp_k,
+            panel_area_m2=sum(p.area_m2 for p in panels) if panels else 0.06,
+        )
+        thermal_model = ThermalModel(thermal_cfg)
+
     return Simulation(
         orbit=orbit,
         panels=panels,
@@ -102,4 +115,6 @@ def build_simulation(config: MissionConfig) -> Simulation:
         loads=loads,
         initial_soc=config.simulation.initial_soc,
         eps_board=eps_board,
+        eclipse_model=config.orbit.eclipse_model,
+        thermal_model=thermal_model,
     )

@@ -9,6 +9,7 @@ import numpy as np
 # Earth constants
 MU_EARTH = 3.986004418e14  # m^3/s^2
 R_EARTH = 6371.0e3  # m
+J2 = 1.08263e-3  # Earth J2 oblateness coefficient
 
 
 @dataclass
@@ -38,12 +39,26 @@ class Orbit:
         altitude_m: float,
         inclination_rad: float,
         raan_rad: float = 0.0,
+        j2: bool = False,
     ):
         self._altitude_m = altitude_m
         self._inclination_rad = inclination_rad
         self._raan_rad = raan_rad
         self._semi_major_axis = R_EARTH + altitude_m
         self._mean_motion = np.sqrt(MU_EARTH / self._semi_major_axis**3)  # rad/s
+        self._j2 = j2
+
+        # J2 RAAN drift rate: dΩ/dt = -1.5 * n * J2 * (R_E/a)² * cos(i)
+        if j2:
+            self._raan_rate = (
+                -1.5
+                * self._mean_motion
+                * J2
+                * (R_EARTH / self._semi_major_axis) ** 2
+                * np.cos(inclination_rad)
+            )
+        else:
+            self._raan_rate = 0.0
 
     @classmethod
     def circular(
@@ -51,12 +66,14 @@ class Orbit:
         altitude_km: float,
         inclination_deg: float,
         raan_deg: float = 0.0,
+        j2: bool = False,
     ) -> Orbit:
         """Create a circular orbit from altitude (km) and inclination (deg)."""
         return cls(
             altitude_m=altitude_km * 1000.0,
             inclination_rad=np.radians(inclination_deg),
             raan_rad=np.radians(raan_deg),
+            j2=j2,
         )
 
     @property
@@ -93,7 +110,9 @@ class Orbit:
         a = self._semi_major_axis
         n = self._mean_motion
         inc = self._inclination_rad
-        raan = self._raan_rad
+
+        # RAAN: static or drifting with J2
+        raan = self._raan_rad + self._raan_rate * times
 
         # True anomaly (= mean anomaly for circular orbit)
         theta = n * times

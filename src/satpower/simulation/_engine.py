@@ -10,6 +10,7 @@ from satpower.orbit._eclipse import EclipseModel
 from satpower.orbit._environment import OrbitalEnvironment
 from satpower.orbit._geometry import sun_position_eci, sun_vector
 from satpower.solar._panel import SolarPanel
+from satpower.solar._mppt import MpptModel
 from satpower.battery._pack import BatteryPack
 from satpower.battery._soc import CoulombCounter
 from satpower.loads._profile import LoadProfile
@@ -17,7 +18,7 @@ from satpower.regulation._bus import PowerBus
 from satpower.regulation._eps_board import EPSBoard
 from satpower.simulation._results import SimulationResults
 
-# Default panel temperature (K) — simplified for Phase 1
+# Default panel temperature (K) — used when thermal model is disabled
 _DEFAULT_PANEL_TEMP_K = 301.15  # ~28°C (standard test conditions)
 _DEFAULT_BATTERY_TEMP_K = 298.15  # ~25°C
 
@@ -59,7 +60,8 @@ class Simulation:
 
     Integrates the power balance over time using scipy's solve_ivp.
 
-    State vector: [SoC, V_rc1, V_rc2]
+    State vector: [SoC, V_rc1, V_rc2] (no thermal)
+                  [SoC, V_rc1, V_rc2, T_panel, T_battery] (with thermal)
     """
 
     def __init__(
@@ -74,6 +76,9 @@ class Simulation:
         initial_soc: float = 1.0,
         epoch_day_of_year: float = 80.0,
         eps_board: EPSBoard | None = None,
+        eclipse_model: str = "cylindrical",
+        mppt_model: MpptModel | None = None,
+        thermal_model: "ThermalModel | None" = None,
     ):
         self._orbit = orbit
         self._panels = panels
@@ -90,9 +95,15 @@ class Simulation:
             self._bus = bus or PowerBus()
             self._mppt_efficiency = mppt_efficiency
 
+        self._mppt_model = mppt_model
         self._initial_soc = initial_soc
         self._epoch_doy = epoch_day_of_year
-        self._eclipse_model = EclipseModel()
+        self._eclipse_model = EclipseModel(method=eclipse_model)
+        self._thermal_model = thermal_model
+        self._thermal_enabled = thermal_model is not None
+
+        # Precompute total panel area for thermal model
+        self._total_panel_area = sum(p.area_m2 for p in panels) if panels else 0.0
 
     def _compute_solar_power(
         self,
@@ -100,6 +111,8 @@ class Simulation:
         sat_vel: np.ndarray,
         sun_pos: np.ndarray,
         shadow_frac: float,
+        t: float = 0.0,
+        panel_temp_k: float = _DEFAULT_PANEL_TEMP_K,
     ) -> float:
         """Compute total solar array power at a single timestep."""
         if shadow_frac >= 1.0:
@@ -112,25 +125,71 @@ class Simulation:
         r_eci_to_body = _nadir_rotation_matrix(sat_pos, sat_vel)
         sun_dir_body = r_eci_to_body @ sun_dir_eci
 
-        irradiance = self._environment.solar_flux() * (1.0 - shadow_frac)
+        current_doy = self._epoch_doy + t / 86400.0
+        irradiance = self._environment.solar_flux_at_epoch(current_doy) * (1.0 - shadow_frac)
 
+        if self._mppt_model is not None and self._mppt_model._power_dependent:
+            # Two-pass: first compute raw power, then apply power-dependent MPPT
+            raw_power = 0.0
+            for panel in self._panels:
+                raw_power += panel.power(
+                    sun_dir_body, irradiance, panel_temp_k, 1.0
+                )
+            mppt_eff = self._mppt_model.tracking_efficiency(panel_power=raw_power)
+            return raw_power * mppt_eff
+
+        mppt_eff = (
+            self._mppt_model.efficiency if self._mppt_model is not None
+            else self._mppt_efficiency
+        )
         total_power = 0.0
         for panel in self._panels:
             total_power += panel.power(
-                sun_dir_body,
-                irradiance,
-                _DEFAULT_PANEL_TEMP_K,
-                self._mppt_efficiency,
+                sun_dir_body, irradiance, panel_temp_k, mppt_eff
             )
 
         return total_power
 
+    def _compute_solar_absorbed_heat(
+        self,
+        sat_pos: np.ndarray,
+        sat_vel: np.ndarray,
+        sun_pos: np.ndarray,
+        shadow_frac: float,
+        t: float,
+        solar_power_w: float,
+    ) -> float:
+        """Compute solar heat absorbed by panels (not converted to electricity).
+
+        Returns absorbed solar thermal power in watts.
+        """
+        if shadow_frac >= 1.0:
+            return 0.0
+
+        current_doy = self._epoch_doy + t / 86400.0
+        irradiance = self._environment.solar_flux_at_epoch(current_doy) * (1.0 - shadow_frac)
+
+        # Total solar power incident on panels (approximation: use total area * avg cos)
+        # The electrical power is already computed; absorbed heat = incident - electrical
+        # Simplified: absorbed = alpha * irradiance * area * avg_cos_angle - P_electrical
+        # More conservative: use absorptance directly
+        alpha = self._thermal_model.config.panel_absorptance if self._thermal_model else 0.91
+        # Approximate total incident solar on panels
+        total_incident = irradiance * self._total_panel_area * 0.5  # avg cos factor ~0.5
+        solar_absorbed = alpha * total_incident - solar_power_w
+        return max(0.0, solar_absorbed)
+
     def _rhs(self, t: float, state: np.ndarray) -> np.ndarray:
         """Right-hand side of the ODE system.
 
-        state = [SoC, V_rc1, V_rc2]
+        state = [SoC, V_rc1, V_rc2] or [SoC, V_rc1, V_rc2, T_panel, T_battery]
         """
-        soc, v_rc1, v_rc2 = state
+        if self._thermal_enabled:
+            soc, v_rc1, v_rc2, t_panel, t_battery = state
+        else:
+            soc, v_rc1, v_rc2 = state
+            t_panel = _DEFAULT_PANEL_TEMP_K
+            t_battery = _DEFAULT_BATTERY_TEMP_K
 
         # Clamp SoC for intermediate calculations
         soc_clamped = np.clip(soc, 0.0, 1.0)
@@ -147,15 +206,17 @@ class Simulation:
         shadow = self._eclipse_model.shadow_fraction(sat_pos, sun_pos)
         in_eclipse = shadow >= 0.5
 
-        # Solar power
-        solar_power = self._compute_solar_power(sat_pos, sat_vel, sun_pos, shadow)
+        # Solar power (using dynamic panel temperature if thermal enabled)
+        solar_power = self._compute_solar_power(
+            sat_pos, sat_vel, sun_pos, shadow, t, t_panel
+        )
 
         # Load power
         load_power = self._loads.power_at(t, in_eclipse)
 
         # Battery voltage (use OCV estimate for current computation)
         battery_voltage = self._battery.terminal_voltage(
-            soc_clamped, 0.0, _DEFAULT_BATTERY_TEMP_K, v_rc1, v_rc2
+            soc_clamped, 0.0, t_battery, v_rc1, v_rc2
         )
 
         # Battery current from power balance
@@ -165,7 +226,7 @@ class Simulation:
 
         # Iterative correction: recompute voltage with estimated current
         battery_voltage_loaded = self._battery.terminal_voltage(
-            soc_clamped, battery_current, _DEFAULT_BATTERY_TEMP_K, v_rc1, v_rc2
+            soc_clamped, battery_current, t_battery, v_rc1, v_rc2
         )
         if battery_voltage_loaded > 0:
             battery_current = self._bus.net_battery_current(
@@ -183,7 +244,28 @@ class Simulation:
 
         dv_rc1_dt, dv_rc2_dt = self._battery.derivatives(battery_current, v_rc1, v_rc2)
 
-        return np.array([dsoc_dt, dv_rc1_dt, dv_rc2_dt])
+        if not self._thermal_enabled:
+            return np.array([dsoc_dt, dv_rc1_dt, dv_rc2_dt])
+
+        # Thermal derivatives
+        altitude_m = self._orbit.altitude_m
+        solar_absorbed = self._compute_solar_absorbed_heat(
+            sat_pos, sat_vel, sun_pos, shadow, t, solar_power
+        )
+        albedo_flux = self._environment.earth_albedo_flux(altitude_m)
+        earth_ir_flux = self._environment.earth_ir_flux(altitude_m)
+
+        dt_panel = self._thermal_model.panel_derivatives(
+            t_panel, solar_absorbed, albedo_flux, earth_ir_flux, self._total_panel_area
+        )
+
+        # Battery Joule heating: I²R
+        r_internal = self._battery.cell.internal_resistance(soc_clamped, t_battery)
+        joule_heat = battery_current**2 * r_internal
+
+        dt_battery = self._thermal_model.battery_derivatives(t_battery, joule_heat)
+
+        return np.array([dsoc_dt, dv_rc1_dt, dv_rc2_dt, dt_panel, dt_battery])
 
     def run(
         self,
@@ -209,7 +291,14 @@ class Simulation:
             raise ValueError("Specify either duration_orbits or duration_s")
 
         # Initial state
-        y0 = np.array([self._initial_soc, 0.0, 0.0])
+        if self._thermal_enabled:
+            cfg = self._thermal_model.config
+            y0 = np.array([
+                self._initial_soc, 0.0, 0.0,
+                cfg.initial_panel_temp_k, cfg.initial_battery_temp_k,
+            ])
+        else:
+            y0 = np.array([self._initial_soc, 0.0, 0.0])
 
         # Time evaluation points (for dense output)
         n_points = max(int(t_end / dt_max) + 1, 100)
@@ -236,6 +325,13 @@ class Simulation:
         v_rc1 = sol.y[1]
         v_rc2 = sol.y[2]
 
+        if self._thermal_enabled:
+            panel_temperature = sol.y[3]
+            battery_temperature = sol.y[4]
+        else:
+            panel_temperature = None
+            battery_temperature = None
+
         # Recompute auxiliary arrays
         n = len(times)
         power_generated = np.zeros(n)
@@ -254,20 +350,23 @@ class Simulation:
             in_ecl = shadow >= 0.5
             eclipse[i] = in_ecl
 
+            t_panel = panel_temperature[i] if panel_temperature is not None else _DEFAULT_PANEL_TEMP_K
+            t_bat = battery_temperature[i] if battery_temperature is not None else _DEFAULT_BATTERY_TEMP_K
+
             power_generated[i] = self._compute_solar_power(
-                sat_pos, sat_vel, sun_pos, shadow
+                sat_pos, sat_vel, sun_pos, shadow, t, t_panel
             )
             power_consumed[i] = self._loads.power_at(t, in_ecl)
 
             # Compute battery current for voltage under load
             v_ocv = self._battery.terminal_voltage(
-                soc[i], 0.0, _DEFAULT_BATTERY_TEMP_K, v_rc1[i], v_rc2[i]
+                soc[i], 0.0, t_bat, v_rc1[i], v_rc2[i]
             )
             i_bat = self._bus.net_battery_current(
                 power_generated[i], power_consumed[i], v_ocv
             )
             battery_voltage[i] = self._battery.terminal_voltage(
-                soc[i], i_bat, _DEFAULT_BATTERY_TEMP_K, v_rc1[i], v_rc2[i]
+                soc[i], i_bat, t_bat, v_rc1[i], v_rc2[i]
             )
 
             modes.append(
@@ -283,4 +382,6 @@ class Simulation:
             eclipse=eclipse,
             modes=modes,
             orbit_period=self._orbit.period,
+            panel_temperature=panel_temperature,
+            battery_temperature=battery_temperature,
         )

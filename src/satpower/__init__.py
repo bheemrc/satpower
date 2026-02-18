@@ -21,6 +21,7 @@ from satpower.regulation._eps_board import EPSBoard
 from satpower.simulation._engine import Simulation
 from satpower.simulation._results import SimulationResults
 from satpower.simulation._events import EclipseEventDetector
+from satpower.thermal._model import ThermalModel, ThermalConfig
 
 __all__ = [
     "__version__",
@@ -48,4 +49,6 @@ __all__ = [
     "Simulation",
     "SimulationResults",
     "EclipseEventDetector",
+    "ThermalModel",
+    "ThermalConfig",
 ]

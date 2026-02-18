@@ -28,21 +28,44 @@ orbit = sp.Orbit.circular(altitude_km=550, inclination_deg=97.6)
 # ISS orbit
 iss = sp.Orbit.circular(altitude_km=408, inclination_deg=51.6)
 
+# SSO with J2 perturbation (RAAN precession)
+sso = sp.Orbit.circular(altitude_km=550, inclination_deg=97.6, j2=True)
+
 # Access properties
 print(orbit.period)        # seconds
 print(orbit.altitude_km)   # km
 print(orbit.inclination_deg)
 ```
 
-Supported orbit types: circular LEO only (Kepler propagation, no perturbations).
+### J2 perturbation
+
+Earth's oblateness causes the orbital plane to precess. For Sun-synchronous orbits, this produces ~0.9856 deg/day of RAAN drift, matching the Earth's motion around the Sun. Enable J2 for accurate eclipse timing in SSO missions:
+
+```python
+orbit = sp.Orbit.circular(altitude_km=550, inclination_deg=97.6, j2=True)
+```
 
 ### Common CubeSat orbits
 
-| Mission type | Altitude | Inclination | Notes |
-|-------------|----------|-------------|-------|
-| Sun-synchronous (SSO) | 500-700 km | 97-98° | Most common for Earth observation |
-| ISS deploy | 408 km | 51.6° | University missions |
-| Low-inclination | 500-600 km | 0-45° | IoT/M2M, equatorial coverage |
+| Mission type | Altitude | Inclination | J2 recommended | Notes |
+|-------------|----------|-------------|----------------|-------|
+| Sun-synchronous (SSO) | 500-700 km | 97-98 deg | Yes | Most common for Earth observation |
+| ISS deploy | 408 km | 51.6 deg | Optional | University missions |
+| Low-inclination | 500-600 km | 0-45 deg | Optional | IoT/M2M, equatorial coverage |
+
+## Eclipse models
+
+Choose the eclipse model when creating a simulation:
+
+```python
+# Cylindrical (default) — binary shadow, no penumbra
+sim = sp.Simulation(orbit, panels, battery, loads)
+
+# Conical — smooth penumbra transitions
+sim = sp.Simulation(orbit, panels, battery, loads, eclipse_model="conical")
+```
+
+The conical model is more realistic, producing slightly shorter full-shadow durations and smoother power transitions at eclipse boundaries.
 
 ## Solar panels
 
@@ -101,6 +124,23 @@ wing = sp.SolarPanel.deployed(
     normal=np.array([0, 1, 0]),  # +Y direction
     name="custom_wing",
 )
+```
+
+## MPPT modeling
+
+By default, MPPT efficiency is a constant (0.97). For more realistic modeling, use power-dependent mode where efficiency drops at low power:
+
+```python
+from satpower.solar import MpptModel
+
+mppt = MpptModel(
+    efficiency=0.97,
+    power_dependent=True,
+    rated_power_w=8.0,
+    min_efficiency=0.85,
+)
+
+sim = sp.Simulation(orbit, panels, battery, loads, mppt_model=mppt)
 ```
 
 ## Batteries
@@ -190,6 +230,53 @@ sim = sp.Simulation(orbit, panels, battery, loads, eps_board=eps)
 
 When `eps_board` is provided, the simulation automatically uses the EPS board's converter efficiency and MPPT efficiency instead of defaults.
 
+## DC-DC converter
+
+For more realistic power conditioning, use load-dependent converter efficiency:
+
+```python
+from satpower.regulation import DcDcConverter, PowerBus
+
+converter = DcDcConverter(
+    efficiency=0.92,
+    load_dependent=True,
+    rated_power_w=15.0,
+    peak_efficiency=0.94,
+    light_load_efficiency=0.80,
+)
+
+bus = PowerBus(bus_voltage=3.3, converter=converter)
+sim = sp.Simulation(orbit, panels, battery, loads, bus=bus)
+```
+
+## Thermal modeling
+
+Track panel and battery temperatures as part of the ODE state vector:
+
+```python
+thermal = sp.ThermalModel(sp.ThermalConfig(
+    panel_area_m2=sum(p.area_m2 for p in panels),
+    panel_thermal_mass_j_per_k=450.0,
+    battery_thermal_mass_j_per_k=95.0,
+    spacecraft_interior_temp_k=293.15,
+))
+
+sim = sp.Simulation(
+    orbit, panels, battery, loads,
+    eclipse_model="conical",
+    thermal_model=thermal,
+)
+results = sim.run(duration_orbits=5)
+
+# Temperature time series (Kelvin)
+print(results.panel_temperature)
+print(results.battery_temperature)
+```
+
+Thermal effects feed back into the simulation:
+- Panel temperature affects solar cell voltage and current
+- Battery temperature affects internal resistance (Arrhenius)
+
 ## Running simulations
 
 ```python
@@ -201,6 +288,9 @@ sim = sp.Simulation(
     eps_board=eps,              # optional: real EPS board
     initial_soc=1.0,           # starting battery charge (0-1)
     epoch_day_of_year=80.0,    # day of year at simulation start
+    eclipse_model="conical",   # or "cylindrical" (default)
+    mppt_model=mppt,           # optional: power-dependent MPPT
+    thermal_model=thermal,     # optional: temperature tracking
 )
 
 results = sim.run(
@@ -227,6 +317,8 @@ results.power_generated     # watts
 results.power_consumed      # watts
 results.battery_voltage     # volts
 results.eclipse             # boolean
+results.panel_temperature   # Kelvin (None if thermal disabled)
+results.battery_temperature # Kelvin (None if thermal disabled)
 
 # Plots
 results.plot_soc()
@@ -240,6 +332,40 @@ results.plot_battery_voltage()
 report = results.report(loads, battery, mission_name="MyMission")
 print(report.to_text())    # formatted table
 report.to_dict()           # machine-readable
+```
+
+## Battery aging
+
+Model long-term capacity fade with Arrhenius temperature acceleration:
+
+```python
+from satpower.battery import AgingModel
+
+aging = AgingModel(
+    calendar_fade_per_year=0.02,
+    cycle_fade_per_cycle_50dod=0.0001,
+    cycle_fade_per_cycle_100dod=0.0005,
+    reference_temp_k=298.15,
+    activation_energy_j=50000.0,
+)
+
+remaining = aging.capacity_remaining(
+    years=2.0, n_cycles=10000, avg_dod=0.3, temperature_k=308.15
+)
+print(f"Capacity: {remaining:.1%}")
+```
+
+### Lifetime simulation
+
+Run multi-segment simulations over months or years:
+
+```python
+from satpower.simulation import LifetimeSimulation
+
+lifetime = LifetimeSimulation(simulation=sim, aging_model=aging)
+results = lifetime.run(duration_years=2.0, update_interval_orbits=100)
+
+print(results.capacity_remaining)  # capacity fade over time
 ```
 
 ## Component validation
@@ -262,3 +388,56 @@ Checks performed:
 3. Panel Isc vs EPS max solar input current
 4. Number of panels vs EPS solar inputs
 5. Load power vs estimated generation capacity
+
+## Full physics example
+
+A simulation using all physics features together:
+
+```python
+import satpower as sp
+from satpower.solar import MpptModel
+from satpower.regulation import DcDcConverter, PowerBus
+
+# Orbit with J2 perturbation
+orbit = sp.Orbit.circular(altitude_km=550, inclination_deg=97.6, j2=True)
+
+# Panels
+panels = sp.SolarPanel.cubesat_body("3U", "azur_3g30c", exclude_faces=["-Z"])
+
+# Battery
+battery = sp.BatteryPack.from_cell("panasonic_ncr18650b", "2S2P")
+
+# Loads
+loads = sp.LoadProfile()
+loads.add_mode("obc", power_w=0.4)
+loads.add_mode("adcs", power_w=0.8)
+loads.add_mode("camera", power_w=6.0, duty_cycle=0.3, trigger="sunlight")
+loads.add_mode("comms", power_w=4.0, duty_cycle=0.15)
+
+# Power-dependent MPPT
+mppt = MpptModel(efficiency=0.97, power_dependent=True, rated_power_w=8.0, min_efficiency=0.85)
+
+# Load-dependent converter
+converter = DcDcConverter(
+    efficiency=0.92, load_dependent=True,
+    rated_power_w=15.0, peak_efficiency=0.94, light_load_efficiency=0.80,
+)
+bus = PowerBus(bus_voltage=3.3, converter=converter)
+
+# Thermal model
+thermal = sp.ThermalModel(sp.ThermalConfig(
+    panel_area_m2=sum(p.area_m2 for p in panels),
+))
+
+# Run with all physics
+sim = sp.Simulation(
+    orbit, panels, battery, loads,
+    bus=bus, mppt_model=mppt,
+    eclipse_model="conical",
+    thermal_model=thermal,
+    epoch_day_of_year=80.0,
+)
+results = sim.run(duration_orbits=5, dt_max=60.0)
+
+print(results.summary())
+```

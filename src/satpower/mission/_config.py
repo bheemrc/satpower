@@ -10,6 +10,8 @@ class OrbitConfig(BaseModel):
     altitude_km: float
     inclination_deg: float
     raan_deg: float = 0.0
+    j2: bool = False
+    eclipse_model: str = "cylindrical"
 
 
 class DeployedWingsConfig(BaseModel):
@@ -44,10 +46,18 @@ class SatelliteConfig(BaseModel):
     loads: list[LoadConfig] = Field(default_factory=list)
 
 
+class ThermalModelConfig(BaseModel):
+    enabled: bool = False
+    panel_thermal_mass_j_per_k: float = 450.0
+    battery_thermal_mass_j_per_k: float = 95.0
+    spacecraft_interior_temp_k: float = 293.15
+
+
 class SimulationConfig(BaseModel):
     duration_orbits: float = 10.0
     initial_soc: float = 1.0
     dt_max: float = 30.0
+    thermal: ThermalModelConfig = Field(default_factory=ThermalModelConfig)
 
 
 class MissionConfig(BaseModel):

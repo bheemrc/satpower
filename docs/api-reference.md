@@ -21,6 +21,8 @@ sp.Simulation
 sp.SimulationResults
 sp.EclipseModel
 sp.OrbitalEnvironment
+sp.ThermalModel
+sp.ThermalConfig
 ```
 
 ---
@@ -30,16 +32,18 @@ sp.OrbitalEnvironment
 ### `Orbit`
 
 ```python
-Orbit.circular(altitude_km, inclination_deg, raan_deg=0.0) -> Orbit
+Orbit.circular(altitude_km, inclination_deg, raan_deg=0.0, j2=False) -> Orbit
 ```
 
-Creates a circular LEO orbit. Properties: `period`, `altitude_km`, `altitude_m`, `inclination_deg`, `semi_major_axis`.
+Creates a circular LEO orbit. When `j2=True`, RAAN precesses due to Earth's oblateness.
+
+Properties: `period`, `altitude_km`, `altitude_m`, `inclination_deg`, `semi_major_axis`.
 
 ```python
 orbit.propagate(times: np.ndarray) -> OrbitState
 ```
 
-Returns position/velocity in ECI frame at given times (seconds from epoch).
+Returns position/velocity in ECI frame at given times (seconds from epoch). With J2 enabled, RAAN drifts over time.
 
 ### `OrbitState`
 
@@ -48,16 +52,21 @@ Dataclass with `time`, `position` (N,3), `velocity` (N,3), and `altitude` proper
 ### `EclipseModel`
 
 ```python
-model = EclipseModel(method="cylindrical")
+model = EclipseModel(method="cylindrical")  # or "conical"
 model.shadow_fraction(sat_pos, sun_pos) -> float | np.ndarray  # 0=sun, 1=shadow
 model.find_transitions(sat_positions, sun_positions, times) -> list[EclipseEvent]
 ```
+
+Methods:
+- `"cylindrical"` -- binary shadow (0 or 1)
+- `"conical"` -- smooth penumbra transitions (values in [0, 1])
 
 ### `OrbitalEnvironment`
 
 ```python
 env = OrbitalEnvironment(solar_constant=1361.0)
 env.solar_flux(distance_au=1.0) -> float
+env.solar_flux_at_epoch(day_of_year: float) -> float  # seasonal variation
 env.earth_albedo_flux(altitude_m) -> float
 env.earth_ir_flux(altitude_m) -> float
 env.beta_angle(inclination_rad, raan_rad, sun_ecliptic_lon_rad) -> float
@@ -116,6 +125,23 @@ Properties: `area_m2`, `normal`, `name`, `cell`.
 panel.power(sun_direction, irradiance, temperature_k, mppt_efficiency=0.97) -> float
 ```
 
+### `MpptModel`
+
+```python
+mppt = MpptModel(
+    efficiency=0.97,           # peak / constant efficiency
+    power_dependent=False,     # enable power-dependent mode
+    rated_power_w=10.0,        # rated panel power for scaling
+    min_efficiency=0.85,       # efficiency at very low power
+)
+
+mppt.tracking_efficiency(panel_power=0.0) -> float
+mppt.efficiency  # property: peak efficiency value
+```
+
+When `power_dependent=True`, efficiency drops at low power:
+`η = η_peak - (η_peak - η_min) * exp(-5 * P / P_rated)`
+
 ---
 
 ## `satpower.battery`
@@ -145,6 +171,25 @@ BatteryPack.from_cell(cell_name: str, config: str) -> BatteryPack
 Properties: `cell`, `n_series`, `n_parallel`, `capacity_ah`, `energy_wh`, `nominal_voltage`, `max_voltage`, `min_voltage`.
 
 Methods: `terminal_voltage(...)`, `derivatives(...)` -- same as BatteryCell but scaled for pack.
+
+### `AgingModel`
+
+```python
+aging = AgingModel(
+    calendar_fade_per_year=0.02,
+    cycle_fade_per_cycle_50dod=0.0001,
+    cycle_fade_per_cycle_100dod=0.0005,
+    reference_temp_k=298.15,       # Arrhenius reference temperature
+    activation_energy_j=50000.0,   # Arrhenius activation energy
+)
+
+aging.capacity_remaining(
+    years: float,
+    n_cycles: int,
+    avg_dod: float,
+    temperature_k: float = 298.15,  # temperature for Arrhenius acceleration
+) -> float  # fraction remaining [0, 1]
+```
 
 ---
 
@@ -204,10 +249,55 @@ bus.net_battery_current(solar_power, load_power, battery_voltage) -> float
 ### `DcDcConverter`
 
 ```python
-conv = DcDcConverter(efficiency=0.92, name="")
+conv = DcDcConverter(
+    efficiency=0.92,
+    name="",
+    load_dependent=False,         # enable load-dependent mode
+    rated_power_w=20.0,           # rated output power
+    peak_efficiency=0.94,         # peak at ~50% load
+    light_load_efficiency=0.80,   # efficiency at very light loads
+)
+
+conv.efficiency                          # property: constant efficiency
+conv.efficiency_at_load(load_power_w) -> float  # dynamic efficiency
 conv.output_power(input_power) -> float
 conv.input_power(output_power) -> float
 ```
+
+When `load_dependent=True`, efficiency varies with load level: peaks at ~50% rated, drops at light and heavy loads.
+
+---
+
+## `satpower.thermal`
+
+### `ThermalConfig`
+
+```python
+@dataclass
+class ThermalConfig:
+    panel_thermal_mass_j_per_k: float = 450.0
+    panel_absorptance: float = 0.91
+    panel_emittance: float = 0.85
+    panel_area_m2: float = 0.06
+    battery_thermal_mass_j_per_k: float = 95.0
+    battery_emittance: float = 0.8
+    battery_surface_area_m2: float = 0.01
+    spacecraft_interior_temp_k: float = 293.15
+    initial_panel_temp_k: float = 301.15
+    initial_battery_temp_k: float = 298.15
+```
+
+### `ThermalModel`
+
+```python
+thermal = ThermalModel(config=ThermalConfig(...))
+
+thermal.panel_derivatives(t_panel, solar_absorbed_w, albedo_flux, earth_ir_flux, panel_area) -> float
+thermal.battery_derivatives(t_battery, joule_heat_w, heater_power_w=0.0) -> float
+thermal.config  # property: ThermalConfig
+```
+
+Pass to `Simulation` to enable thermal tracking in the ODE state vector.
 
 ---
 
@@ -223,7 +313,10 @@ sim = Simulation(
     mppt_efficiency=0.97,
     initial_soc=1.0,
     epoch_day_of_year=80.0,
-    eps_board=None,          # overrides bus + mppt_efficiency
+    eps_board=None,              # overrides bus + mppt_efficiency
+    eclipse_model="cylindrical", # or "conical"
+    mppt_model=None,             # MpptModel for power-dependent mode
+    thermal_model=None,          # ThermalModel for temperature tracking
 )
 sim.run(duration_orbits=None, duration_s=None, dt_max=30.0, method="RK45") -> SimulationResults
 ```
@@ -231,6 +324,8 @@ sim.run(duration_orbits=None, duration_s=None, dt_max=30.0, method="RK45") -> Si
 ### `SimulationResults`
 
 Arrays: `time`, `soc`, `power_generated`, `power_consumed`, `battery_voltage`, `eclipse`, `modes`.
+
+Optional arrays (when thermal enabled): `panel_temperature`, `battery_temperature`.
 
 Properties: `time_minutes`, `time_hours`, `time_orbits`, `worst_case_dod`, `power_margin`, `energy_balance_per_orbit`, `eclipse_fraction`.
 
@@ -242,6 +337,25 @@ results.plot_soc(ax=None) -> Figure
 results.plot_power_balance(ax=None) -> Figure
 results.plot_battery_voltage(ax=None) -> Figure
 ```
+
+### `LifetimeSimulation`
+
+```python
+from satpower.simulation import LifetimeSimulation
+
+lifetime = LifetimeSimulation(simulation=sim, aging_model=aging)
+results = lifetime.run(
+    duration_years=2.0,
+    update_interval_orbits=100,
+    orbits_per_segment=3,
+)
+```
+
+Returns `LifetimeResults` with:
+- `segment_years` -- time points
+- `capacity_remaining` -- fraction of original capacity
+- `min_soc_per_segment` -- worst SoC per segment
+- `worst_dod_per_segment` -- worst DoD per segment
 
 ### `PowerBudgetReport`
 
@@ -281,6 +395,38 @@ result.passed    # bool
 result.errors    # list[str]
 result.warnings  # list[str]
 ```
+
+---
+
+## `satpower.api`
+
+See [SaaS API](saas-api.md) for full documentation.
+
+### Service functions
+
+```python
+from satpower.api import run_simulation, run_simulation_async, run_preset
+from satpower.api import list_components, get_component, get_presets
+
+response = run_simulation(request)            # sync
+response = await run_simulation_async(request) # async (ThreadPoolExecutor)
+response = run_preset(preset_request)
+components = list_components("solar_cells")   # or "battery_cells", "eps"
+detail = get_component("solar_cells", "azur_3g30c")
+presets = get_presets()
+```
+
+### Request schemas
+
+`SimulationRequest`, `OrbitRequest`, `SolarRequest`, `BatteryRequest`, `LoadRequest`, `SimulationParametersRequest`, `PresetSimulationRequest`, `PlotFormat`.
+
+### Response schemas
+
+`SimulationResponse`, `SimulationSummary`, `PowerBudgetResponse`, `ValidationResponse`, `PlotData`, `TimeSeriesData`, `ComponentListResponse`, `ComponentDetailResponse`, `PresetListResponse`.
+
+### Exceptions
+
+`SatpowerAPIError`, `ComponentNotFoundError`, `InvalidConfigurationError`, `SimulationError`, `PresetNotFoundError`.
 
 ---
 

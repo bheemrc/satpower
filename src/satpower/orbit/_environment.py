@@ -29,6 +29,20 @@ class OrbitalEnvironment:
         """
         return self._solar_constant / (distance_au**2)
 
+    def solar_flux_at_epoch(self, day_of_year: float) -> float:
+        """Solar flux accounting for Earth's orbital eccentricity (W/m^2).
+
+        Varies ±3.4% over the year: peaks near perihelion (day ~3),
+        minimum near aphelion (day ~186).
+
+        Parameters
+        ----------
+        day_of_year : Day of the year (1–365.25), can be fractional.
+        """
+        return self._solar_constant * (
+            1.0 + 0.0334 * np.cos(2.0 * np.pi * (day_of_year - 3.0) / 365.25)
+        )
+
     def earth_albedo_flux(self, altitude_m: float) -> float:
         """Albedo flux reflected from Earth onto satellite (W/m^2).
 
