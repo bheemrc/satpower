@@ -139,17 +139,19 @@ class EclipseModel:
         sat_positions: np.ndarray,
         sun_positions: np.ndarray,
         times: np.ndarray,
+        threshold: float = 0.5,
     ) -> list[EclipseEvent]:
-        """Find eclipse entry/exit events by scanning shadow fraction transitions."""
+        """Find eclipse entry/exit events by threshold crossing."""
         fractions = self.shadow_fraction(sat_positions, sun_positions)
         events = []
 
         for i in range(1, len(fractions)):
-            if fractions[i - 1] == 0.0 and fractions[i] == 1.0:
-                # Linear interpolation for transition time
+            prev_in = fractions[i - 1] >= threshold
+            curr_in = fractions[i] >= threshold
+            if not prev_in and curr_in:
                 t_event = 0.5 * (times[i - 1] + times[i])
                 events.append(EclipseEvent(time=t_event, event_type="entry"))
-            elif fractions[i - 1] == 1.0 and fractions[i] == 0.0:
+            elif prev_in and not curr_in:
                 t_event = 0.5 * (times[i - 1] + times[i])
                 events.append(EclipseEvent(time=t_event, event_type="exit"))
 

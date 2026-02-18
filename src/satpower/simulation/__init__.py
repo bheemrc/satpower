@@ -4,6 +4,7 @@ from satpower.simulation._engine import Simulation
 from satpower.simulation._results import SimulationResults
 from satpower.simulation._events import EclipseEventDetector
 from satpower.simulation._report import PowerBudgetReport, generate_power_budget
+from satpower.simulation._montecarlo import MonteCarloRunner, MonteCarloResults
 
 __all__ = [
     "Simulation",
@@ -11,4 +12,6 @@ __all__ = [
     "EclipseEventDetector",
     "PowerBudgetReport",
     "generate_power_budget",
+    "MonteCarloRunner",
+    "MonteCarloResults",
 ]

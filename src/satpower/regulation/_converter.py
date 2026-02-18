@@ -66,6 +66,14 @@ class DcDcConverter:
         eff = self._light_load_efficiency + eta_range * rise - droop
         return float(np.clip(eff, self._light_load_efficiency, self._peak_efficiency))
 
+    def efficiency_for_discharge(self, load_power_w: float) -> float:
+        """Efficiency for battery -> bus path."""
+        return self.efficiency_at_load(load_power_w)
+
+    def efficiency_for_charge(self, source_power_w: float) -> float:
+        """Efficiency for solar -> battery path."""
+        return self.efficiency_at_load(source_power_w)
+
     def output_power(self, input_power: float) -> float:
         """Output power given input power."""
         return input_power * self._efficiency

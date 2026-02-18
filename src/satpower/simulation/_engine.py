@@ -97,6 +97,7 @@ class Simulation:
 
         self._mppt_model = mppt_model
         self._initial_soc = initial_soc
+        self._capacity_scale = 1.0
         self._epoch_doy = epoch_day_of_year
         self._eclipse_model = EclipseModel(method=eclipse_model)
         self._thermal_model = thermal_model
@@ -104,6 +105,10 @@ class Simulation:
 
         # Precompute total panel area for thermal model
         self._total_panel_area = sum(p.area_m2 for p in panels) if panels else 0.0
+
+    def set_capacity_scale(self, scale: float) -> None:
+        """Scale effective battery capacity for aging studies."""
+        self._capacity_scale = float(np.clip(scale, 1e-6, 1.0))
 
     def _compute_solar_power(
         self,
@@ -157,7 +162,7 @@ class Simulation:
         sun_pos: np.ndarray,
         shadow_frac: float,
         t: float,
-        solar_power_w: float,
+        panel_temp_k: float,
     ) -> float:
         """Compute solar heat absorbed by panels (not converted to electricity).
 
@@ -169,14 +174,26 @@ class Simulation:
         current_doy = self._epoch_doy + t / 86400.0
         irradiance = self._environment.solar_flux_at_epoch(current_doy) * (1.0 - shadow_frac)
 
-        # Total solar power incident on panels (approximation: use total area * avg cos)
-        # The electrical power is already computed; absorbed heat = incident - electrical
-        # Simplified: absorbed = alpha * irradiance * area * avg_cos_angle - P_electrical
-        # More conservative: use absorptance directly
+        if self._total_panel_area <= 0.0:
+            return 0.0
+
+        sun_dir_eci = sun_vector(sat_pos, sun_pos)
+        r_eci_to_body = _nadir_rotation_matrix(sat_pos, sat_vel)
+        sun_dir_body = r_eci_to_body @ sun_dir_eci
+
         alpha = self._thermal_model.config.panel_absorptance if self._thermal_model else 0.91
-        # Approximate total incident solar on panels
-        total_incident = irradiance * self._total_panel_area * 0.5  # avg cos factor ~0.5
-        solar_absorbed = alpha * total_incident - solar_power_w
+
+        total_incident = 0.0
+        raw_electrical = 0.0
+        for panel in self._panels:
+            cos_angle = float(np.dot(sun_dir_body, panel.normal))
+            if cos_angle <= 0.0:
+                continue
+            total_incident += irradiance * panel.area_m2 * cos_angle
+            raw_electrical += panel.power(sun_dir_body, irradiance, panel_temp_k, 1.0)
+
+        # Use pre-MPPT electrical extraction so MPPT losses are not removed from panel heat.
+        solar_absorbed = alpha * total_incident - raw_electrical
         return max(0.0, solar_absorbed)
 
     def _rhs(self, t: float, state: np.ndarray) -> np.ndarray:
@@ -233,8 +250,18 @@ class Simulation:
                 solar_power, load_power, battery_voltage_loaded
             )
 
+        # Apply current and voltage safety limits from battery datasheet.
+        battery_current = float(
+            np.clip(
+                battery_current,
+                -self._battery.max_charge_current_a,
+                self._battery.max_discharge_current_a,
+            )
+        )
+
         # State derivatives
-        dsoc_dt = CoulombCounter.dsoc_dt(battery_current, self._battery.capacity_ah)
+        effective_capacity_ah = self._battery.capacity_ah * self._capacity_scale
+        dsoc_dt = CoulombCounter.dsoc_dt(battery_current, effective_capacity_ah)
 
         # Enforce SoC bounds: stop charging at 100%, stop discharging at 0%
         if soc >= 1.0 and dsoc_dt > 0:
@@ -250,18 +277,28 @@ class Simulation:
         # Thermal derivatives
         altitude_m = self._orbit.altitude_m
         solar_absorbed = self._compute_solar_absorbed_heat(
-            sat_pos, sat_vel, sun_pos, shadow, t, solar_power
+            sat_pos, sat_vel, sun_pos, shadow, t, t_panel
         )
-        albedo_flux = self._environment.earth_albedo_flux(altitude_m)
-        earth_ir_flux = self._environment.earth_ir_flux(altitude_m)
+        if self._total_panel_area > 0.0:
+            nadir_axis_body = np.array([0.0, 0.0, 1.0])
+            earth_view = sum(
+                p.area_m2 * max(float(np.dot(p.normal, nadir_axis_body)), 0.0)
+                for p in self._panels
+            ) / self._total_panel_area
+        else:
+            earth_view = 0.0
+
+        albedo_flux = self._environment.earth_albedo_flux(altitude_m) * earth_view * (1.0 - shadow)
+        earth_ir_flux = self._environment.earth_ir_flux(altitude_m) * earth_view
 
         dt_panel = self._thermal_model.panel_derivatives(
             t_panel, solar_absorbed, albedo_flux, earth_ir_flux, self._total_panel_area
         )
 
         # Battery Joule heating: I²R
-        r_internal = self._battery.cell.internal_resistance(soc_clamped, t_battery)
-        joule_heat = battery_current**2 * r_internal
+        r_cell = self._battery.cell.internal_resistance(soc_clamped, t_battery)
+        r_pack = r_cell * self._battery.n_series / self._battery.n_parallel
+        joule_heat = battery_current**2 * r_pack
 
         dt_battery = self._thermal_model.battery_derivatives(t_battery, joule_heat)
 
@@ -347,7 +384,7 @@ class Simulation:
             sun_pos = sun_position_eci(t, self._epoch_doy)
 
             shadow = self._eclipse_model.shadow_fraction(sat_pos, sun_pos)
-            in_ecl = shadow >= 0.5
+            in_ecl = shadow > 0.0
             eclipse[i] = in_ecl
 
             t_panel = panel_temperature[i] if panel_temperature is not None else _DEFAULT_PANEL_TEMP_K

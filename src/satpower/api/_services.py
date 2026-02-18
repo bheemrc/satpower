@@ -275,9 +275,17 @@ def run_preset(request: PresetSimulationRequest) -> SimulationResponse:
     )
 
     # Apply overrides
+    unknown_overrides = []
     for key, value in request.overrides.items():
         if hasattr(sim_request, key):
             setattr(sim_request, key, value)
+        else:
+            unknown_overrides.append(key)
+
+    if unknown_overrides:
+        raise InvalidConfigurationError(
+            f"Unknown override keys: {', '.join(sorted(unknown_overrides))}"
+        )
 
     return run_simulation(sim_request)
 

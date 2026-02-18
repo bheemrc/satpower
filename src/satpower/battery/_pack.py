@@ -14,7 +14,12 @@ def _parse_config(config: str) -> tuple[int, int]:
         raise ValueError(
             f"Invalid battery config: {config!r}. Expected format like '2S2P'."
         )
-    return int(match.group(1)), int(match.group(2))
+    n_series, n_parallel = int(match.group(1)), int(match.group(2))
+    if n_series <= 0 or n_parallel <= 0:
+        raise ValueError(
+            f"Invalid battery config: {config!r}. Series/parallel counts must be > 0."
+        )
+    return n_series, n_parallel
 
 
 class BatteryPack:
@@ -72,6 +77,16 @@ class BatteryPack:
     @property
     def min_voltage(self) -> float:
         return self._cell.min_voltage * self._n_series
+
+    @property
+    def max_charge_current_a(self) -> float:
+        """Maximum pack charge current (A)."""
+        return self._cell.max_charge_current_a * self._n_parallel
+
+    @property
+    def max_discharge_current_a(self) -> float:
+        """Maximum pack discharge current (A)."""
+        return self._cell.max_discharge_current_a * self._n_parallel
 
     def terminal_voltage(
         self,

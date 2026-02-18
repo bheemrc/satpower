@@ -75,6 +75,14 @@ class BatteryCell:
     def min_voltage(self) -> float:
         return self._min_v
 
+    @property
+    def max_charge_current_a(self) -> float:
+        return self._data.max_charge_current_a
+
+    @property
+    def max_discharge_current_a(self) -> float:
+        return self._data.max_discharge_current_a
+
     def ocv(self, soc: float) -> float:
         """Open-circuit voltage at given state of charge."""
         soc = np.clip(soc, 0.0, 1.0)

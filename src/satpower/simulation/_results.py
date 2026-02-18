@@ -3,11 +3,29 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 
 import numpy as np
 
 # NumPy 2.0 removed np.trapz in favour of np.trapezoid
 _trapz = getattr(np, "trapezoid", None) or np.trapz
+
+
+def _pyplot():
+    """Import matplotlib.pyplot with a safe non-interactive backend.
+
+    Switches to Agg if the current backend requires a display that isn't
+    available (macOS without DISPLAY, or any GUI backend in a headless env).
+    """
+    import matplotlib
+
+    backend = str(matplotlib.get_backend()).lower()
+    interactive_backends = {"macosx", "tkagg", "qt5agg", "qtagg", "gtk3agg", "wxagg"}
+    if backend in interactive_backends and not os.environ.get("DISPLAY"):
+        matplotlib.use("Agg", force=True)
+    import matplotlib.pyplot as plt
+
+    return plt
 
 
 @dataclass
@@ -102,7 +120,7 @@ class SimulationResults:
 
         Returns matplotlib Figure if no axes provided.
         """
-        import matplotlib.pyplot as plt
+        plt = _pyplot()
 
         if ax is None:
             fig, ax = plt.subplots(figsize=(10, 4))
@@ -125,7 +143,7 @@ class SimulationResults:
 
     def plot_power_balance(self, ax=None):
         """Plot power generation and consumption over time."""
-        import matplotlib.pyplot as plt
+        plt = _pyplot()
 
         if ax is None:
             fig, ax = plt.subplots(figsize=(10, 4))
@@ -148,7 +166,7 @@ class SimulationResults:
 
     def plot_battery_voltage(self, ax=None):
         """Plot battery voltage over time."""
-        import matplotlib.pyplot as plt
+        plt = _pyplot()
 
         if ax is None:
             fig, ax = plt.subplots(figsize=(10, 4))

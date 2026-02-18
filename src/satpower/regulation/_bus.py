@@ -51,10 +51,11 @@ class PowerBus:
         if battery_voltage <= 0:
             return 0.0
 
-        eff = self._converter.efficiency_at_load(load_power)
+        discharge_eff = self._converter.efficiency_for_discharge(load_power)
 
         # Solar power goes through MPPT/converter to bus
-        solar_to_bus = solar_power * eff
+        charge_eff = self._converter.efficiency_for_charge(solar_power)
+        solar_to_bus = solar_power * charge_eff
 
         # Net power balance at the bus
         net_power_bus = load_power - solar_to_bus
@@ -62,9 +63,10 @@ class PowerBus:
         if net_power_bus > 0:
             # Discharging: battery must supply more than bus needs due to
             # converter loss from battery voltage to bus voltage
-            battery_power = net_power_bus / eff
+            battery_power = net_power_bus / discharge_eff
         else:
-            # Charging: excess solar charges battery with converter loss
-            battery_power = net_power_bus * eff
+            # Charging: surplus at bus already accounts for solar→bus loss.
+            # No additional converter loss on the bus→battery path.
+            battery_power = net_power_bus
 
         return battery_power / battery_voltage

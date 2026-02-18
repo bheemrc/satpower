@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -18,20 +18,20 @@ class PlotFormat(str, Enum):
 # --- Request schemas ---
 
 class OrbitRequest(BaseModel):
-    altitude_km: float
-    inclination_deg: float
+    altitude_km: float = Field(gt=0.0)
+    inclination_deg: float = Field(ge=0.0, le=180.0)
     raan_deg: float = 0.0
     j2: bool = False
-    eclipse_model: str = "cylindrical"
+    eclipse_model: Literal["cylindrical", "conical"] = "cylindrical"
 
 
 class SolarRequest(BaseModel):
     cell: str
-    form_factor: str = "3U"
+    form_factor: Literal["1U", "3U", "6U"] = "3U"
     body_panels: bool = True
     exclude_faces: list[str] | None = None
-    deployed_wings_count: int | None = None
-    deployed_wings_area_m2: float | None = None
+    deployed_wings_count: Literal[2, 4] | None = None
+    deployed_wings_area_m2: float | None = Field(default=None, gt=0.0)
 
 
 class BatteryRequest(BaseModel):
@@ -41,15 +41,15 @@ class BatteryRequest(BaseModel):
 
 class LoadRequest(BaseModel):
     name: str
-    power_w: float
-    duty_cycle: float = 1.0
-    trigger: str = "always"
+    power_w: float = Field(ge=0.0)
+    duty_cycle: float = Field(default=1.0, ge=0.0, le=1.0)
+    trigger: Literal["always", "sunlight", "eclipse", "scheduled"] = "always"
 
 
 class SimulationParametersRequest(BaseModel):
-    duration_orbits: float = 10.0
-    initial_soc: float = 1.0
-    dt_max: float = 30.0
+    duration_orbits: float = Field(default=10.0, gt=0.0)
+    initial_soc: float = Field(default=1.0, ge=0.0, le=1.0)
+    dt_max: float = Field(default=30.0, gt=0.0)
 
 
 class SimulationRequest(BaseModel):

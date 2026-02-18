@@ -50,32 +50,58 @@ class LifetimeSimulation:
         orbits_per_year = 365.25 * 86400.0 / orbit_period_s
         total_orbits = duration_years * orbits_per_year
 
+        if update_interval_orbits <= 0:
+            raise ValueError("update_interval_orbits must be > 0")
+        if orbits_per_segment <= 0:
+            raise ValueError("orbits_per_segment must be > 0")
+
+        # Save original state so we can restore after run
+        original_initial_soc = self._simulation._initial_soc
+        original_capacity_scale = self._simulation._capacity_scale
+
         results = LifetimeResults()
         elapsed_orbits = 0.0
         elapsed_years = 0.0
+        cumulative_efc = 0.0  # equivalent full cycles
+        current_capacity_scale = 1.0
+        next_initial_soc = original_initial_soc
 
-        while elapsed_orbits < total_orbits:
-            # Run a short simulation segment
-            seg_results = self._simulation.run(
-                duration_orbits=orbits_per_segment, dt_max=60.0
-            )
+        try:
+            while elapsed_orbits < total_orbits:
+                represented_orbits = min(update_interval_orbits, total_orbits - elapsed_orbits)
+                segment_orbits = min(orbits_per_segment, represented_orbits)
+                self._simulation._initial_soc = float(np.clip(next_initial_soc, 0.0, 1.0))
+                self._simulation.set_capacity_scale(current_capacity_scale)
 
-            # Record metrics
-            results.segment_years.append(elapsed_years)
-            results.min_soc_per_segment.append(float(np.min(seg_results.soc)))
-            results.worst_dod_per_segment.append(seg_results.worst_case_dod)
+                seg_results = self._simulation.run(
+                    duration_orbits=segment_orbits, dt_max=60.0
+                )
 
-            # Update aging
-            elapsed_orbits += update_interval_orbits
-            elapsed_years = elapsed_orbits / orbits_per_year
-            n_cycles = int(elapsed_orbits)
-            avg_dod = seg_results.worst_case_dod
+                results.segment_years.append(elapsed_years)
+                results.min_soc_per_segment.append(float(np.min(seg_results.soc)))
+                results.worst_dod_per_segment.append(seg_results.worst_case_dod)
 
-            cap_remaining = self._aging_model.capacity_remaining(
-                years=elapsed_years,
-                n_cycles=n_cycles,
-                avg_dod=avg_dod,
-            )
-            results.capacity_remaining.append(cap_remaining)
+                # Compute equivalent full cycles using peak-to-trough depth.
+                # This is more robust than summing np.diff (which amplifies
+                # solver noise) and better represents actual cycle loading.
+                dod = seg_results.worst_case_dod
+                cycles_per_orbit = 1.0  # one charge/discharge cycle per orbit
+                cumulative_efc += dod * cycles_per_orbit * represented_orbits
+
+                elapsed_orbits += represented_orbits
+                elapsed_years = elapsed_orbits / orbits_per_year
+                next_initial_soc = float(seg_results.soc[-1])
+
+                cap_remaining = self._aging_model.capacity_remaining(
+                    years=elapsed_years,
+                    n_cycles=int(round(cumulative_efc)),
+                    avg_dod=dod,
+                )
+                current_capacity_scale = cap_remaining
+                results.capacity_remaining.append(cap_remaining)
+        finally:
+            # Restore original simulation state
+            self._simulation._initial_soc = original_initial_soc
+            self._simulation._capacity_scale = original_capacity_scale
 
         return results

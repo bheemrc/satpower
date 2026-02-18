@@ -69,14 +69,15 @@ def validate_system(
             break  # All panels use same cell type typically
 
     # 3. Panel Isc vs EPS max solar input current
-    for panel in panels:
-        cell = panel.cell
-        if cell.isc > eps.max_solar_input_a:
+    if panels:
+        cell = panels[0].cell
+        panels_per_input = max(len(panels) / max(eps.num_solar_inputs, 1), 1.0)
+        est_input_isc = cell.isc * panels_per_input
+        if est_input_isc > eps.max_solar_input_a:
             warnings.append(
-                f"Panel '{panel.name}': cell Isc ({cell.isc:.3f}A) exceeds "
-                f"EPS max solar input current ({eps.max_solar_input_a:.1f}A)"
+                f"Estimated per-input Isc ({est_input_isc:.3f}A) exceeds EPS input limit "
+                f"({eps.max_solar_input_a:.1f}A) assuming evenly shared panel inputs."
             )
-            break
 
     # 4. Number of panels vs EPS solar inputs
     if len(panels) > eps.num_solar_inputs:
@@ -88,14 +89,15 @@ def validate_system(
 
     # 5. Load power vs estimated generation capacity (warning only)
     if loads_peak_power is not None and panels:
-        # Rough estimate: sum of panel areas * cell efficiency * 1361 * cos(45°) * mppt
+        # Conservative coarse estimate: body-mounted geometry average + MPPT.
         total_area = sum(p.area_m2 for p in panels)
         avg_efficiency = panels[0].cell.efficiency if panels else 0.3
         estimated_gen = total_area * avg_efficiency * 1361.0 * 0.5 * eps.mppt_efficiency
         if loads_peak_power > estimated_gen:
             warnings.append(
                 f"Peak load ({loads_peak_power:.1f}W) may exceed estimated "
-                f"generation capacity (~{estimated_gen:.1f}W)"
+                f"generation capacity (~{estimated_gen:.1f}W). Run full orbit simulation "
+                f"for flight-like verification."
             )
 
     passed = len(errors) == 0

@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+
+_ALLOWED_TRIGGERS = {"always", "sunlight", "eclipse", "scheduled"}
+_DEFAULT_SCHEDULE_PERIOD_S = 5400.0
 
 
 @dataclass
@@ -14,6 +17,8 @@ class LoadMode:
     duty_cycle: float = 1.0
     trigger: str = "always"  # "always", "sunlight", "eclipse", "scheduled"
     priority: int = 0
+    period_s: float = _DEFAULT_SCHEDULE_PERIOD_S
+    phase_s: float = 0.0
 
 
 class LoadProfile:
@@ -29,6 +34,8 @@ class LoadProfile:
         duty_cycle: float = 1.0,
         trigger: str = "always",
         priority: int = 0,
+        period_s: float = _DEFAULT_SCHEDULE_PERIOD_S,
+        phase_s: float = 0.0,
     ) -> None:
         """Add an operational mode.
 
@@ -42,6 +49,12 @@ class LoadProfile:
         """
         if not 0.0 <= duty_cycle <= 1.0:
             raise ValueError(f"duty_cycle must be in [0, 1], got {duty_cycle}")
+        if trigger not in _ALLOWED_TRIGGERS:
+            raise ValueError(
+                f"trigger must be one of {_ALLOWED_TRIGGERS}, got {trigger!r}"
+            )
+        if period_s <= 0.0:
+            raise ValueError(f"period_s must be > 0, got {period_s}")
         self._modes.append(
             LoadMode(
                 name=name,
@@ -49,8 +62,17 @@ class LoadProfile:
                 duty_cycle=duty_cycle,
                 trigger=trigger,
                 priority=priority,
+                period_s=period_s,
+                phase_s=phase_s,
             )
         )
+
+    @staticmethod
+    def _scheduled_active(mode: LoadMode, time: float) -> bool:
+        if mode.duty_cycle <= 0.0:
+            return False
+        phase = ((time + mode.phase_s) % mode.period_s) / mode.period_s
+        return phase < mode.duty_cycle
 
     @property
     def modes(self) -> list[LoadMode]:
@@ -73,6 +95,10 @@ class LoadProfile:
                 continue
             if mode.trigger == "eclipse" and not in_eclipse:
                 continue
+            if mode.trigger == "scheduled":
+                if self._scheduled_active(mode, time):
+                    total += mode.power_w
+                continue
             total += mode.power_w * mode.duty_cycle
         return total
 
@@ -83,6 +109,8 @@ class LoadProfile:
             if mode.trigger == "sunlight" and in_eclipse:
                 continue
             if mode.trigger == "eclipse" and not in_eclipse:
+                continue
+            if mode.trigger == "scheduled" and not self._scheduled_active(mode, time):
                 continue
             if mode.duty_cycle > 0:
                 active.append(mode.name)
@@ -105,4 +133,6 @@ class LoadProfile:
                 total += mode.power_w * mode.duty_cycle * sunlight_fraction
             elif mode.trigger == "eclipse":
                 total += mode.power_w * mode.duty_cycle * eclipse_fraction
+            elif mode.trigger == "scheduled":
+                total += mode.power_w * mode.duty_cycle
         return total

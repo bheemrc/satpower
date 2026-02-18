@@ -42,7 +42,9 @@ def _fig_to_base64(fig) -> str:
     buf.seek(0)
     encoded = base64.b64encode(buf.read()).decode("ascii")
     buf.close()
-    import matplotlib.pyplot as plt
+    # Use the same safe pyplot import as _results.py
+    from satpower.simulation._results import _pyplot
+    plt = _pyplot()
     plt.close(fig)
     return encoded
 

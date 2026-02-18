@@ -59,9 +59,9 @@ class TestPowerBus:
         current = bus.net_battery_current(
             solar_power=10.0, load_power=0.0, battery_voltage=10.0
         )
-        # Solar to bus: 10 * 0.9 = 9W surplus
-        # Charge: -9 * 0.9 = -8.1W stored → -8.1 / 10V = -0.81A
-        assert abs(current - (-0.81)) < 0.01
+        # Solar to bus: 10 * 0.9 = 9W surplus → surplus goes to battery
+        # Battery receives 9W → -9 / 10V = -0.9A
+        assert abs(current - (-0.9)) < 0.01
 
 
 class TestCoulombCounter:
